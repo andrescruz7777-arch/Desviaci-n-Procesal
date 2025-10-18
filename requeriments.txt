@@ -1,24 +1,8 @@
-# =============================================================
-# ⚖️ COS JudicIA – Tablero Jurídico Inteligente
-# Versión Cloud • Contacto Solutions LegalTech
-# =============================================================
-
-# --- Framework principal ---
 streamlit==1.39.0
-
-# --- Procesamiento y análisis de datos ---
 pandas==2.2.3
 numpy==1.26.4
-
-# --- Fechas y utilidades ---
 python-dateutil==2.9.0.post0
-
-# --- Lectura / escritura de Excel ---
 openpyxl==3.1.5
 xlsxwriter==3.2.0
-
-# --- Visualización ---
 plotly==5.24.1
-
-# --- Compatibilidad Cloud (formato parquet / optimización) ---
 pyarrow==17.0.0
