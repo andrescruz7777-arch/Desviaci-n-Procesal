@@ -94,12 +94,10 @@ if inventario_file:
     base_limpia = base_limpia[base_limpia["VAR_FECHA_CALCULADA"] >= 0].copy()
 
    # ============================================
-# 📊 PASO 5 — % Avance, % Desviación y Clasificación (Tema oscuro compacto)
+# 📊 PASO 5 — % Avance, % Desviación y Clasificación (solo tablas, tema oscuro)
 # ============================================
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
-import streamlit as st
 import pandas as pd
+import streamlit as st
 from io import BytesIO
 
 # ============================
@@ -114,6 +112,17 @@ st.markdown("""
     h1, h2, h3, h4, h5, h6, label, .stMetricLabel, .stMetricValue {
         color: #FFFFFF !important;
     }
+    .dataframe th {
+        background-color: #1B1F24 !important;
+        color: #FFFFFF !important;
+        font-weight: bold !important;
+        text-align: center !important;
+    }
+    .dataframe td {
+        color: #FFFFFF !important;
+        background-color: #121417 !important;
+        text-align: center !important;
+    }
     .stDownloadButton > button {
         background-color: #1B1F24 !important;
         color: white !important;
@@ -124,14 +133,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================
-# ⚙️ CARGA BASE
+# ⚙️ CARGA DE BASE
 # ============================
 if "base_limpia" not in locals() and "base_limpia" not in st.session_state:
     st.error("❌ No se encontró la base limpia del Paso 4. Ejecuta los pasos previos primero.")
 else:
     df5 = st.session_state.get("base_limpia", base_limpia).copy()
 
-    # Normalización y tipos
+    # Normalizar columnas
     df5.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df5.columns]
     for c in ["DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA", "CAPITAL_ACT"]:
         if c in df5.columns:
@@ -145,14 +154,12 @@ else:
     # ============================
     df5["PORC_AVANCE"] = df5.apply(
         lambda x: (x["VAR_FECHA_CALCULADA"] / x["DIAS_POR_ETAPA"] * 100)
-        if x["DIAS_POR_ETAPA"] > 0 else 0,
-        axis=1
+        if x["DIAS_POR_ETAPA"] > 0 else 0, axis=1
     )
 
     df5["PORC_DESVIACION"] = df5.apply(
         lambda x: max(((x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"]) / x["DIAS_POR_ETAPA"]) * 100, 0)
-        if x["DIAS_POR_ETAPA"] > 0 else 0,
-        axis=1
+        if x["DIAS_POR_ETAPA"] > 0 else 0, axis=1
     )
 
     def clasif_desviacion(p):
@@ -181,91 +188,73 @@ else:
     c4.metric("⚠️ Procesos con desviación", f"{desviados:,}")
 
     # ============================
-    # 🍩 GRÁFICO 1 — DONA ESTADO GENERAL
+    # 📋 TABLA 1 — ESTADO GENERAL
     # ============================
     resumen_estado = df5.groupby("ESTADO_TIEMPO").agg(
         PROCESOS=("ESTADO_TIEMPO", "count"),
         CAPITAL=("CAPITAL_MILLONES", "sum")
     ).reset_index()
+    resumen_estado["% DEL TOTAL"] = (resumen_estado["PROCESOS"] / total_procesos * 100).round(1)
 
-    fig1, ax1 = plt.subplots(figsize=(3, 3), facecolor="#0E1117")
-    colores_estado = ["#27AE60" if e == "A TIEMPO" else "#E74C3C" for e in resumen_estado["ESTADO_TIEMPO"]]
-    wedges, texts, autotexts = ax1.pie(
-        resumen_estado["PROCESOS"],
-        labels=[f"{e}\n{p:,} proc\n${c:,.1f} M" for e, p, c in zip(resumen_estado["ESTADO_TIEMPO"], resumen_estado["PROCESOS"], resumen_estado["CAPITAL"])],
-        autopct="%1.0f%%",
-        colors=colores_estado,
-        startangle=90,
-        textprops={"color": "white", "fontsize": 8}
-    )
-    ax1.set_title("📈 Estado general de los procesos", color="white", fontsize=10)
-    plt.setp(autotexts, color="white", fontsize=8)
-    st.pyplot(fig1)
+    st.subheader("📋 Estado general de los procesos")
+    st.dataframe(resumen_estado.style.set_table_styles([
+        {"selector": "th", "props": [("background-color", "#1B1F24"), ("color", "white"), ("text-align", "center")]},
+        {"selector": "td", "props": [("color", "white"), ("background-color", "#121417"), ("text-align", "center")]}
+    ]).format({"CAPITAL": "{:,.1f}", "% DEL TOTAL": "{:.1f} %"}))
 
     # ============================
-    # 📊 GRÁFICOS 2 Y 3 — BARRAS COMPACTAS LADO A LADO
+    # 📋 TABLA 2 — GRAVEDAD
     # ============================
-    col1, col2 = st.columns(2)
+    desviados_df = df5[df5["ESTADO_TIEMPO"] == "FUERA DE TIEMPO"]
+    if not desviados_df.empty:
+        gravedad = desviados_df.groupby("NIVEL_DESVIACION").agg(
+            PROCESOS=("NIVEL_DESVIACION", "count"),
+            CAPITAL=("CAPITAL_MILLONES", "sum")
+        ).reindex(["LEVE", "MODERADA", "GRAVE"]).fillna(0)
+        gravedad["% CAPITAL DESVIADO"] = (gravedad["CAPITAL"] / gravedad["CAPITAL"].sum() * 100).round(1)
 
-    # ---- Izquierda: Gravedad
-    with col1:
-        desviados_df = df5[df5["ESTADO_TIEMPO"] == "FUERA DE TIEMPO"]
-        if not desviados_df.empty:
-            gravedad = desviados_df.groupby("NIVEL_DESVIACION").agg(
-                PROCESOS=("NIVEL_DESVIACION", "count"),
-                CAPITAL=("CAPITAL_MILLONES", "sum")
-            ).reindex(["LEVE", "MODERADA", "GRAVE"]).fillna(0)
-
-            fig2, ax2 = plt.subplots(figsize=(3.5, 2), facecolor="#0E1117")
-            colores = ["#27AE60", "#F1C40F", "#E74C3C"]
-            ax2.barh(gravedad.index, gravedad["PROCESOS"], color=colores, alpha=0.8)
-            for i, (p, c) in enumerate(zip(gravedad["PROCESOS"], gravedad["CAPITAL"])):
-                ax2.text(p + 3, i, f"{int(p):,} | ${c:,.1f} M", va="center", color="white", fontsize=8)
-            ax2.set_xlabel("Procesos", color="white", fontsize=8)
-            ax2.set_title("📊 Gravedad (Leve, Moderada, Grave)", color="white", fontsize=9)
-            ax2.tick_params(colors="white", labelsize=8)
-            st.pyplot(fig2)
-
-    # ---- Derecha: Ranking por Etapa
-    with col2:
-        if "ETAPA_JURIDICA" in df5.columns:
-            etapa_rank = df5.groupby("ETAPA_JURIDICA").agg(
-                PROCESOS=("DEUDOR", "count"),
-                CAPITAL=("CAPITAL_MILLONES", "sum"),
-                PROM_DESV=("PORC_DESVIACION", "mean")
-            ).sort_values("CAPITAL", ascending=False).head(5)
-
-            fig3, ax3 = plt.subplots(figsize=(3.8, 2), facecolor="#0E1117")
-            bars = ax3.bar(etapa_rank.index, etapa_rank["PROCESOS"],
-                           color=plt.cm.RdYlGn_r(etapa_rank["PROM_DESV"] / etapa_rank["PROM_DESV"].max()))
-            ax3.set_title("🏛️ Ranking por Etapa Jurídica", color="white", fontsize=9)
-            ax3.set_ylabel("Procesos", color="white", fontsize=8)
-            ax3.set_xticklabels(etapa_rank.index, rotation=45, ha="right", color="white", fontsize=8)
-            for i, (p, c) in enumerate(zip(etapa_rank["PROCESOS"], etapa_rank["CAPITAL"])):
-                ax3.text(i, p + 3, f"${c:,.1f} M", ha="center", color="white", fontsize=8)
-            ax3.tick_params(colors="white", labelsize=8)
-            st.pyplot(fig3)
+        st.subheader("📋 Niveles de gravedad de desviación")
+        st.dataframe(gravedad.style.format({
+            "CAPITAL": "{:,.1f}", "% CAPITAL DESVIADO": "{:.1f} %"
+        }))
 
     # ============================
-    # 📚 GRÁFICO 4 — SUBETAPAS (COMPACTO)
+    # 📋 TABLA 3 — RANKING POR ETAPA
+    # ============================
+    if "ETAPA_JURIDICA" in df5.columns:
+        etapa_rank = df5.groupby("ETAPA_JURIDICA").agg(
+            PROCESOS=("DEUDOR", "count"),
+            CAPITAL=("CAPITAL_MILLONES", "sum"),
+            PROM_DESV=("PORC_DESVIACION", "mean")
+        ).sort_values("CAPITAL", ascending=False).head(10)
+
+        etapa_rank["PROM_DESV"] = etapa_rank["PROM_DESV"].round(1)
+        etapa_rank = etapa_rank.reset_index()
+        etapa_rank.index = etapa_rank.index + 1
+
+        st.subheader("🏛️ Ranking por Etapa Jurídica (Top 10)")
+        st.dataframe(etapa_rank.style.format({
+            "CAPITAL": "{:,.1f}", "PROM_DESV": "{:.1f} %"
+        }))
+
+    # ============================
+    # 📋 TABLA 4 — RANKING POR SUBETAPA
     # ============================
     if "SUB_ETAPA_JURIDICA" in df5.columns:
         sub_rank = df5.groupby("SUB_ETAPA_JURIDICA").agg(
             PROCESOS=("DEUDOR", "count"),
             CAPITAL=("CAPITAL_MILLONES", "sum"),
             PROM_DESV=("PORC_DESVIACION", "mean")
-        ).sort_values("PROM_DESV", ascending=False).head(8)
+        ).sort_values("PROM_DESV", ascending=False).head(15)
 
-        fig4, ax4 = plt.subplots(figsize=(5, 2.8), facecolor="#0E1117")
-        bars = ax4.barh(sub_rank.index, sub_rank["PROM_DESV"],
-                        color=plt.cm.RdYlGn_r(sub_rank["PROM_DESV"] / sub_rank["PROM_DESV"].max()))
-        ax4.xaxis.set_major_formatter(mticker.PercentFormatter())
-        ax4.set_title("📚 Ranking por Subetapa Jurídica", color="white", fontsize=10)
-        ax4.set_xlabel("% Desviación", color="white", fontsize=8)
-        for i, (p, c) in enumerate(zip(sub_rank["PROCESOS"], sub_rank["CAPITAL"])):
-            ax4.text(sub_rank["PROM_DESV"].iloc[i] + 1, i, f"{int(p)} | ${c:,.1f} M", va="center", color="white", fontsize=8)
-        ax4.tick_params(colors="white", labelsize=8)
-        st.pyplot(fig4)
+        sub_rank["PROM_DESV"] = sub_rank["PROM_DESV"].round(1)
+        sub_rank = sub_rank.reset_index()
+        sub_rank.index = sub_rank.index + 1
+
+        st.subheader("📚 Ranking por Subetapa Jurídica (Top 15)")
+        st.dataframe(sub_rank.style.format({
+            "CAPITAL": "{:,.1f}", "PROM_DESV": "{:.1f} %"
+        }))
 
     # ============================
     # 💾 DESCARGA FINAL
@@ -279,3 +268,4 @@ else:
         file_name="Inventario_Paso5_Clasificado.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
