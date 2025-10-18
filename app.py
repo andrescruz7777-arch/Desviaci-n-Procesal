@@ -195,7 +195,7 @@ total_clientes = df5["DEUDOR"].nunique() if "DEUDOR" in df5.columns else 0
 capital_total = df5["CAPITAL_MILLONES"].sum()
 desviados = (df5["ESTADO_TIEMPO"] == "FUERA DE TIEMPO").sum()
 
-st.header("📊 Paso 5 | % Avance, % Desviación y Clasificación (Global)")
+st.header("📊 % Avance, % Desviación y Clasificación (Global)")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("🧾 Procesos totales", f"{total_procesos:,}")
 c2.metric("👤 Clientes únicos", f"{total_clientes:,}")
@@ -291,7 +291,7 @@ resumen["INDICADOR"] = resumen["PROM_DESV"].apply(lambda x: "█" * int(min(x/5,
 
 resumen = resumen.sort_values("PROM_DESV", ascending=False).reset_index(drop=True)
 
-st.header("📊 Paso 6 | Ranking Visual Etapa × Subetapa (Global)")
+st.header("📊 Ranking Visual Etapa × Subetapa (Global)")
 st.subheader("🔎 Desviación promedio, procesos y capital (todas las etapas/subetapas)")
 st.dataframe(
     resumen[["ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA", "PROCESOS", "CAPITAL_M", "PROM_DESV", "NIVEL", "INDICADOR"]]
@@ -341,7 +341,7 @@ graves = resumen_cliente[resumen_cliente["NIVEL"] == "🔴 Grave"]
 total_clientes = len(resumen_cliente)
 total_capital = resumen_cliente["CAPITAL_M"].sum()
 
-st.header("📊 Paso 7 | Clientes Críticos (Global) con Buscador Multicliente y Obligación")
+st.header("📊 Clientes Críticos (Global) con Buscador Multicliente y Obligación")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("👤 Clientes totales", f"{total_clientes:,}")
 c2.metric("📁 Operaciones totales", f"{df7.shape[0]:,}")
@@ -436,7 +436,7 @@ if not faltan_8:
     capital_riesgo = proximos["CAPITAL_MILLONES"].sum()
     procesos_riesgo = len(proximos)
 
-    st.header("📊 Paso 8 | Próximos a Vencer (Riesgo del Mes Actual) — Global")
+    st.header("📊 Próximos a Vencer (Riesgo del Mes Actual) — Global")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📁 Procesos totales", f"{procesos_totales:,}")
     c2.metric("👤 Clientes únicos", f"{clientes_totales:,}")
