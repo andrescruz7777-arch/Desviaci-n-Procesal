@@ -421,7 +421,7 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     # ============================================
-# 📊 PASO 7 — Clientes Críticos con Buscador Multicliente
+# 📊 PASO 7 — Clientes Críticos con Buscador Multicliente + Obligación
 # ============================================
 import pandas as pd
 import streamlit as st
@@ -476,17 +476,17 @@ else:
     df7 = st.session_state.get("base_limpia", base_limpia).copy()
     df7.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df7.columns]
 
-    # Validación columnas mínimas
-    columnas_necesarias = {"DEUDOR", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA", "CAPITAL_ACT",
-                           "PORC_DESVIACION", "DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA"}
+    # Validar columnas necesarias
+    columnas_necesarias = {"DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
+                           "CAPITAL_ACT", "PORC_DESVIACION", "DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA"}
     if not columnas_necesarias.issubset(df7.columns):
         st.error(f"❌ Faltan columnas requeridas: {columnas_necesarias - set(df7.columns)}")
         st.stop()
 
-    # Capital en millones
+    # ============================
+    # 📈 CÁLCULOS BASE
+    # ============================
     df7["CAPITAL_MILLONES"] = pd.to_numeric(df7["CAPITAL_ACT"], errors="coerce") / 1_000_000
-
-    # Calcular DIAS_EXCESO
     df7["DIAS_EXCESO"] = df7.apply(
         lambda x: max(x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"], 0)
         if pd.notnull(x["VAR_FECHA_CALCULADA"]) and pd.notnull(x["DIAS_POR_ETAPA"]) else 0,
@@ -494,10 +494,10 @@ else:
     )
 
     # ============================
-    # 📈 AGRUPACIÓN POR CLIENTE
+    # 📊 AGRUPACIÓN POR CLIENTE
     # ============================
     resumen_cliente = df7.groupby("DEUDOR").agg(
-        OPERACIONES=("DEUDOR", "count"),
+        OPERACIONES=("OPERACION", "count"),
         CAPITAL_M=("CAPITAL_MILLONES", "sum"),
         PROM_DESV=("PORC_DESVIACION", "mean"),
         DIAS_EXCESO_PROM=("DIAS_EXCESO", "mean")
@@ -522,7 +522,8 @@ else:
     total_clientes = len(resumen_cliente)
     total_capital = resumen_cliente["CAPITAL_M"].sum()
 
-    st.header("📊 Paso 7 | Clientes Críticos con Buscador Multicliente")
+    st.header("📊 Paso 7 | Clientes Críticos con Buscador Multicliente y Obligación")
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("👤 Clientes totales", f"{total_clientes:,}")
     c2.metric("📁 Operaciones totales", f"{df7.shape[0]:,}")
@@ -530,7 +531,7 @@ else:
     c4.metric("🔴 Clientes críticos (Grave)", f"{len(graves):,}")
 
     # ============================
-    # 📋 TABLA — CLIENTES CRÍTICOS
+    # 📋 TABLA PRINCIPAL — CLIENTES CRÍTICOS
     # ============================
     st.subheader("🔴 Clientes Críticos (Grave) — Selecciona uno o varios para ver detalle")
 
@@ -549,20 +550,20 @@ else:
     # ============================
     # 🔍 BUSCADOR MULTICLIENTE
     # ============================
-    st.markdown("### 🔎 Buscar clientes para ver todas sus operaciones")
+    st.markdown("### 🔎 Buscar clientes y ver detalle de sus operaciones (con obligación)")
     seleccion_clientes = st.multiselect(
         "Escribe para buscar uno o varios clientes:",
         options=graves["DEUDOR"].sort_values().unique(),
-        help="Puedes buscar por nombre o parte del texto y seleccionar varios"
+        help="Puedes escribir parte del nombre o número y seleccionar varios."
     )
 
     if seleccion_clientes:
         detalle = df7[df7["DEUDOR"].isin(seleccion_clientes)][
-            ["DEUDOR", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
+            ["DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
              "VAR_FECHA_CALCULADA", "DIAS_EXCESO", "CAPITAL_ACT", "PORC_DESVIACION"]
         ].copy()
 
-        st.markdown(f"#### 📂 Detalle de operaciones ({len(detalle)} registros)")
+        st.markdown(f"#### 📂 Detalle de operaciones — {len(detalle)} registros seleccionados")
         st.dataframe(
             detalle.style.background_gradient(subset=["PORC_DESVIACION"], cmap="Reds")
             .format({
@@ -571,7 +572,20 @@ else:
                 "DIAS_EXCESO": "{:.0f} días"
             }),
             use_container_width=True,
-            height=400
+            height=450
+        )
+
+        # ============================
+        # 📊 RESUMEN FILTRADO
+        # ============================
+        resumen_sel = detalle.agg({
+            "CAPITAL_ACT": "sum",
+            "DIAS_EXCESO": "mean"
+        })
+        st.info(
+            f"**Resumen de selección:** "
+            f"Capital total ${resumen_sel['CAPITAL_ACT']:,.0f} — "
+            f"Promedio días exceso {resumen_sel['DIAS_EXCESO']:.0f}"
         )
 
         # 📥 Descargar detalle filtrado
@@ -587,7 +601,7 @@ else:
         )
 
     # ============================
-    # 💾 DESCARGA CASOS GRAVES
+    # 💾 DESCARGA COMPLETA DE GRAVES
     # ============================
     output = BytesIO()
     graves.to_excel(output, index=False, sheet_name="Clientes_Graves", engine="openpyxl")
