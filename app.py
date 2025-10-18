@@ -421,7 +421,7 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     # ============================================
-# 📊 PASO 7 — Agregación por Cliente y Consistencias Multioperación
+# 📊 PASO 7 — Agrupado por Cliente y Descarga de Casos Graves
 # ============================================
 import pandas as pd
 import streamlit as st
@@ -476,7 +476,7 @@ else:
     df7 = st.session_state.get("base_limpia", base_limpia).copy()
     df7.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df7.columns]
 
-    # Validar columnas necesarias
+    # Validación columnas
     columnas_necesarias = {"DEUDOR", "SUB_ETAPA_JURIDICA", "CAPITAL_ACT", "PORC_DESVIACION"}
     if not columnas_necesarias.issubset(df7.columns):
         st.error(f"❌ Faltan columnas requeridas: {columnas_necesarias - set(df7.columns)}")
@@ -496,65 +496,80 @@ else:
         PROM_DESV=("PORC_DESVIACION", "mean")
     ).reset_index()
 
-    # Clasificación de cliente
-    def estado_cliente(p):
-        if p == 0: return "🟢 A TIEMPO"
-        elif p > 0 and p <= 30: return "🟡 Riesgo leve"
-        else: return "🔴 DESVIADO"
-    resumen_cliente["ESTADO_CLIENTE"] = resumen_cliente["PROM_DESV"].apply(estado_cliente)
+    # Clasificación por nivel
+    def nivel(p):
+        if p <= 30: return "🟢 Leve"
+        elif p <= 70: return "🟡 Moderada"
+        else: return "🔴 Grave"
+    resumen_cliente["NIVEL"] = resumen_cliente["PROM_DESV"].apply(nivel)
 
-    # Alerta de inconsistencia
-    resumen_cliente["ALERTA"] = resumen_cliente["SUBETAPAS_DISTINTAS"].apply(
-        lambda x: "⚠️ Revisar" if x > 1 else "✅ OK"
+    resumen_cliente["CAPITAL_M"] = resumen_cliente["CAPITAL_M"].round(1)
+    resumen_cliente["PROM_DESV"] = resumen_cliente["PROM_DESV"].round(1)
+
+    # ============================
+    # 📊 RESUMEN AGRUPADO POR NIVEL
+    # ============================
+    agrupado = resumen_cliente.groupby("NIVEL").agg(
+        CLIENTES=("DEUDOR", "count"),
+        OPERACIONES=("OPERACIONES", "sum"),
+        CAPITAL_M=("CAPITAL_M", "sum")
+    ).reset_index()
+    total_clientes = resumen_cliente["DEUDOR"].nunique()
+    agrupado["% CLIENTES"] = (agrupado["CLIENTES"] / total_clientes * 100).round(1)
+
+    # ============================
+    # 🧾 PANEL EJECUTIVO
+    # ============================
+    total_capital = resumen_cliente["CAPITAL_M"].sum()
+    graves = resumen_cliente[resumen_cliente["NIVEL"] == "🔴 Grave"]
+
+    st.header("📊 Paso 7 | Agrupación por Cliente y Riesgo Global")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("👤 Clientes totales", f"{total_clientes:,}")
+    c2.metric("📁 Operaciones totales", f"{df7.shape[0]:,}")
+    c3.metric("💰 Capital total", f"${total_capital:,.1f} M")
+    c4.metric("🔴 Clientes críticos (Grave)", f"{len(graves):,}")
+
+    # ============================
+    # 📋 TABLA 1 — RESUMEN POR NIVEL
+    # ============================
+    st.subheader("📋 Distribución de clientes por nivel de desviación")
+    st.dataframe(
+        agrupado.style.background_gradient(subset=["CAPITAL_M"], cmap="RdYlGn_r").format({
+            "CAPITAL_M": "{:,.1f}",
+            "% CLIENTES": "{:.1f} %"
+        }),
+        use_container_width=True,
+        height=200
     )
 
     # ============================
-    # 🧾 MÉTRICAS EJECUTIVAS
+    # 📋 TABLA 2 — CLIENTES CRÍTICOS
     # ============================
-    clientes_totales = len(resumen_cliente)
-    operaciones_totales = df7.shape[0]
-    capital_total = resumen_cliente["CAPITAL_M"].sum()
-    inconsistencias = (resumen_cliente["ALERTA"] == "⚠️ Revisar").sum()
-
-    st.header("📊 Paso 7 | Agregación por Cliente y Consistencias Multioperación")
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("👤 Clientes totales", f"{clientes_totales:,}")
-    c2.metric("📁 Operaciones totales", f"{operaciones_totales:,}")
-    c3.metric("💰 Capital total", f"${capital_total:,.1f} M")
-    c4.metric("⚠️ Inconsistencias detectadas", f"{inconsistencias:,}")
-
-    # ============================
-    # 📋 TABLA FINAL
-    # ============================
-    resumen_cliente["PROM_DESV"] = resumen_cliente["PROM_DESV"].round(1)
-    resumen_cliente["CAPITAL_M"] = resumen_cliente["CAPITAL_M"].round(1)
-    resumen_cliente = resumen_cliente.sort_values("PROM_DESV", ascending=False)
-
-    st.subheader("📋 Consolidado por Cliente")
+    st.subheader("🔴 Clientes Críticos (Grave)")
     st.dataframe(
-        resumen_cliente[["DEUDOR", "OPERACIONES", "SUBETAPAS_DISTINTAS",
-                         "ESTADO_CLIENTE", "CAPITAL_M", "PROM_DESV", "ALERTA"]]
-        .style.format({
+        graves[["DEUDOR", "OPERACIONES", "CAPITAL_M", "PROM_DESV", "SUBETAPAS_DISTINTAS"]]
+        .style.background_gradient(subset=["PROM_DESV"], cmap="Reds")
+        .format({
             "CAPITAL_M": "{:,.1f}",
             "PROM_DESV": "{:.1f} %",
             "OPERACIONES": "{:,}"
         }),
         use_container_width=True,
-        height=600
+        height=500
     )
 
     # ============================
-    # 💾 DESCARGA FINAL
+    # 💾 DESCARGA CASOS GRAVES
     # ============================
     output = BytesIO()
-    resumen_cliente.to_excel(output, index=False, sheet_name="Consolidado_Clientes", engine="openpyxl")
+    graves.to_excel(output, index=False, sheet_name="Clientes_Graves", engine="openpyxl")
     output.seek(0)
 
     st.download_button(
-        "⬇️ Descargar Consolidado por Cliente (Paso 7)",
+        "⬇️ Descargar Clientes Críticos (Grave)",
         data=output,
-        file_name="Consolidado_Clientes_Paso7.xlsx",
+        file_name="Clientes_Graves_Paso7.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-
