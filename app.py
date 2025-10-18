@@ -1,5 +1,5 @@
 # ============================================================
-# ⚖️ COS JudicIA – Tablero Jurídico Inteligente (v2.1 Cloud)
+# ⚖️ COS JudicIA – Tablero Jurídico Inteligente (v2.2 Cloud)
 # Autor: Andrés Cruz / Contacto Solutions LegalTech
 # ============================================================
 
@@ -49,15 +49,29 @@ def normalizar_col(col):
 # 🚀 PROCESAMIENTO PRINCIPAL
 # ============================================================
 if inventario_file and tiempos_file:
-    df = pd.read_excel(inventario_file)
+
+    # === DETECCIÓN AUTOMÁTICA DE ENCABEZADO ===
+    temp = pd.read_excel(inventario_file, header=None)
+    header_row = None
+    for i, row in temp.iterrows():
+        fila = row.astype(str).str.upper()
+        if any(fila.str.contains("DEUDOR|OPERACION|SUB-ETAPA|ETAPA", na=False)):
+            header_row = i
+            break
+
+    if header_row is None:
+        st.error("❌ No se pudo detectar encabezado válido en el inventario.")
+        st.stop()
+
+    df = pd.read_excel(inventario_file, header=header_row)
     tiempos = pd.read_excel(tiempos_file)
 
     # Normalizar encabezados
     df.columns = [normalizar_col(c) for c in df.columns]
     tiempos.columns = [normalizar_col(c) for c in tiempos.columns]
 
-    st.write("📘 Columnas inventario:", list(df.columns))
-    st.write("📗 Columnas tiempos:", list(tiempos.columns))
+    st.write("📘 Columnas inventario detectadas:", list(df.columns))
+    st.write("📗 Columnas tiempos detectadas:", list(tiempos.columns))
 
     # === CRUCE CON TABLA DE TIEMPOS ===
     df = df.merge(
