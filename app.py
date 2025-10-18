@@ -345,8 +345,29 @@ else:
     df6 = st.session_state.get("base_limpia", base_limpia).copy()
 
     df6.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df6.columns]
-    df6["CAPITAL_MILLONES"] = pd.to_numeric(df6["CAPITAL_ACT"], errors="coerce") / 1_000_000
-    df6["PORC_DESVIACION"] = pd.to_numeric(df6["PORC_DESVIACION"], errors="coerce")
+
+    # Si no existe PORC_DESVIACION, la calculamos nuevamente
+    if "PORC_DESVIACION" not in df6.columns:
+        if "DIAS_POR_ETAPA" in df6.columns and "VAR_FECHA_CALCULADA" in df6.columns:
+            df6["DIAS_POR_ETAPA"] = pd.to_numeric(df6["DIAS_POR_ETAPA"], errors="coerce").fillna(0)
+            df6["VAR_FECHA_CALCULADA"] = pd.to_numeric(df6["VAR_FECHA_CALCULADA"], errors="coerce").fillna(0)
+            df6["PORC_DESVIACION"] = df6.apply(
+                lambda x: max(((x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"]) / x["DIAS_POR_ETAPA"]) * 100, 0)
+                if x["DIAS_POR_ETAPA"] > 0 else 0,
+                axis=1
+            )
+        else:
+            st.error("⚠️ No se encontraron columnas base para calcular la desviación.")
+            st.stop()
+
+    # Calcular capital en millones
+    if "CAPITAL_ACT" in df6.columns:
+        df6["CAPITAL_MILLONES"] = pd.to_numeric(df6["CAPITAL_ACT"], errors="coerce") / 1_000_000
+    else:
+        st.warning("⚠️ No se encontró la columna CAPITAL_ACT. Se omitirá el cálculo de capital.")
+        df6["CAPITAL_MILLONES"] = 0
+
+    st.session_state["base_limpia"] = df6  # 🔹 Guarda la base actualizada para uso futuro
 
     st.header("📊 Paso 6 | Semaforización Etapa × Subetapa")
 
@@ -406,4 +427,3 @@ else:
         file_name="Matriz_Semaforizada_Paso6.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-
