@@ -421,7 +421,7 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     # ============================================
-# 📊 PASO 7 — Agrupado por Cliente y Descarga de Casos Graves
+# 📊 PASO 7 — Agregación por Cliente con DIAS_EXCESO y Rangos de Días
 # ============================================
 import pandas as pd
 import streamlit as st
@@ -476,54 +476,62 @@ else:
     df7 = st.session_state.get("base_limpia", base_limpia).copy()
     df7.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df7.columns]
 
-    # Validación columnas
-    columnas_necesarias = {"DEUDOR", "SUB_ETAPA_JURIDICA", "CAPITAL_ACT", "PORC_DESVIACION"}
+    # Validación columnas mínimas
+    columnas_necesarias = {"DEUDOR", "CAPITAL_ACT", "PORC_DESVIACION", "DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA"}
     if not columnas_necesarias.issubset(df7.columns):
         st.error(f"❌ Faltan columnas requeridas: {columnas_necesarias - set(df7.columns)}")
         st.stop()
 
     # Capital en millones
     df7["CAPITAL_MILLONES"] = pd.to_numeric(df7["CAPITAL_ACT"], errors="coerce") / 1_000_000
-    df7["PORC_DESVIACION"] = pd.to_numeric(df7["PORC_DESVIACION"], errors="coerce").fillna(0)
+
+    # Calcular DIAS_EXCESO
+    df7["DIAS_EXCESO"] = df7.apply(
+        lambda x: max(x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"], 0)
+        if pd.notnull(x["VAR_FECHA_CALCULADA"]) and pd.notnull(x["DIAS_POR_ETAPA"]) else 0,
+        axis=1
+    )
 
     # ============================
     # 📈 AGRUPACIÓN POR CLIENTE
     # ============================
     resumen_cliente = df7.groupby("DEUDOR").agg(
-        OPERACIONES=("SUB_ETAPA_JURIDICA", "count"),
-        SUBETAPAS_DISTINTAS=("SUB_ETAPA_JURIDICA", "nunique"),
+        OPERACIONES=("DEUDOR", "count"),
         CAPITAL_M=("CAPITAL_MILLONES", "sum"),
-        PROM_DESV=("PORC_DESVIACION", "mean")
+        PROM_DESV=("PORC_DESVIACION", "mean"),
+        DIAS_EXCESO_PROM=("DIAS_EXCESO", "mean")
     ).reset_index()
 
-    # Clasificación por nivel
+    resumen_cliente["CAPITAL_M"] = resumen_cliente["CAPITAL_M"].round(1)
+    resumen_cliente["PROM_DESV"] = resumen_cliente["PROM_DESV"].round(1)
+    resumen_cliente["DIAS_EXCESO_PROM"] = resumen_cliente["DIAS_EXCESO_PROM"].round(1)
+
+    # Clasificación por nivel de desviación
     def nivel(p):
         if p <= 30: return "🟢 Leve"
         elif p <= 70: return "🟡 Moderada"
         else: return "🔴 Grave"
     resumen_cliente["NIVEL"] = resumen_cliente["PROM_DESV"].apply(nivel)
 
-    resumen_cliente["CAPITAL_M"] = resumen_cliente["CAPITAL_M"].round(1)
-    resumen_cliente["PROM_DESV"] = resumen_cliente["PROM_DESV"].round(1)
-
     # ============================
-    # 📊 RESUMEN AGRUPADO POR NIVEL
+    # 📊 AGRUPADO POR NIVEL
     # ============================
     agrupado = resumen_cliente.groupby("NIVEL").agg(
         CLIENTES=("DEUDOR", "count"),
         OPERACIONES=("OPERACIONES", "sum"),
         CAPITAL_M=("CAPITAL_M", "sum")
     ).reset_index()
+
     total_clientes = resumen_cliente["DEUDOR"].nunique()
     agrupado["% CLIENTES"] = (agrupado["CLIENTES"] / total_clientes * 100).round(1)
+    total_capital = resumen_cliente["CAPITAL_M"].sum()
 
     # ============================
     # 🧾 PANEL EJECUTIVO
     # ============================
-    total_capital = resumen_cliente["CAPITAL_M"].sum()
     graves = resumen_cliente[resumen_cliente["NIVEL"] == "🔴 Grave"]
 
-    st.header("📊 Paso 7 | Agrupación por Cliente y Riesgo Global")
+    st.header("📊 Paso 7 | Riesgo por Cliente — Días de Exceso y Desviación")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("👤 Clientes totales", f"{total_clientes:,}")
@@ -547,17 +555,45 @@ else:
     # ============================
     # 📋 TABLA 2 — CLIENTES CRÍTICOS
     # ============================
-    st.subheader("🔴 Clientes Críticos (Grave)")
+    st.subheader("🔴 Clientes Críticos (Grave) — Incluye Días de Exceso")
     st.dataframe(
-        graves[["DEUDOR", "OPERACIONES", "CAPITAL_M", "PROM_DESV", "SUBETAPAS_DISTINTAS"]]
+        graves[["DEUDOR", "OPERACIONES", "CAPITAL_M", "PROM_DESV", "DIAS_EXCESO_PROM"]]
         .style.background_gradient(subset=["PROM_DESV"], cmap="Reds")
         .format({
             "CAPITAL_M": "{:,.1f}",
             "PROM_DESV": "{:.1f} %",
-            "OPERACIONES": "{:,}"
+            "DIAS_EXCESO_PROM": "{:.0f} días"
         }),
         use_container_width=True,
-        height=500
+        height=450
+    )
+
+    # ============================
+    # 📋 TABLA 3 — PROCESOS POR RANGO DE DÍAS EXCEDIDOS
+    # ============================
+    st.subheader("⏰ Distribución de procesos según días de exceso")
+
+    df7["RANGO_DIAS"] = pd.cut(
+        df7["DIAS_EXCESO"],
+        bins=[0, 14, 29, float("inf")],
+        labels=["1 a 14 días", "15 a 29 días", "≥ 30 días"],
+        right=True
+    )
+
+    distribucion_dias = df7[df7["DIAS_EXCESO"] > 0].groupby("RANGO_DIAS").agg(
+        PROCESOS=("DEUDOR", "count"),
+        CLIENTES=("DEUDOR", "nunique"),
+        CAPITAL_M=("CAPITAL_MILLONES", "sum")
+    ).reset_index()
+
+    st.dataframe(
+        distribucion_dias.style.background_gradient(subset=["CAPITAL_M"], cmap="YlOrRd").format({
+            "CAPITAL_M": "{:,.1f}",
+            "PROCESOS": "{:,}",
+            "CLIENTES": "{:,}"
+        }),
+        use_container_width=True,
+        height=200
     )
 
     # ============================
@@ -565,11 +601,12 @@ else:
     # ============================
     output = BytesIO()
     graves.to_excel(output, index=False, sheet_name="Clientes_Graves", engine="openpyxl")
+    distribucion_dias.to_excel(output, sheet_name="Distribucion_Dias_Exceso", startrow=0, index=False)
     output.seek(0)
 
     st.download_button(
-        "⬇️ Descargar Clientes Críticos (Grave)",
+        "⬇️ Descargar Clientes Críticos y Distribución (Paso 7)",
         data=output,
-        file_name="Clientes_Graves_Paso7.xlsx",
+        file_name="Clientes_Graves_y_Distribucion_Paso7.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
