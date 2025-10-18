@@ -420,3 +420,141 @@ else:
         file_name="Ranking_Visual_Paso6.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+    # ============================================
+# 📊 PASO 7 — Agregación por Cliente y Consistencias Multioperación
+# ============================================
+import pandas as pd
+import streamlit as st
+from io import BytesIO
+
+# ============================
+# 🎨 ESTILO OSCURO GLOBAL
+# ============================
+st.markdown("""
+<style>
+body, .stApp {
+    background-color: #0E1117 !important;
+    color: #FFFFFF !important;
+}
+h1, h2, h3, h4, h5, h6, label, .stMetricLabel, .stMetricValue {
+    color: #FFFFFF !important;
+}
+.dataframe th {
+    background-color: #1B1F24 !important;
+    color: #FFFFFF !important;
+    text-align: center !important;
+    border: 1px solid #333 !important;
+}
+.dataframe td {
+    color: #FFFFFF !important;
+    background-color: #121417 !important;
+    text-align: center !important;
+    border: 1px solid #333 !important;
+    font-family: 'Courier New', monospace;
+}
+.stDownloadButton > button {
+    background-color: #1B1F24 !important;
+    color: white !important;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-weight: bold;
+}
+.stDownloadButton > button:hover {
+    background-color: #2C313A !important;
+    border-color: #555;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ============================
+# ⚙️ CARGA BASE
+# ============================
+if "base_limpia" not in locals() and "base_limpia" not in st.session_state:
+    st.error("❌ No se encontró la base limpia del Paso 6. Ejecuta los pasos previos primero.")
+else:
+    df7 = st.session_state.get("base_limpia", base_limpia).copy()
+    df7.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df7.columns]
+
+    # Validar columnas necesarias
+    columnas_necesarias = {"DEUDOR", "SUB_ETAPA_JURIDICA", "CAPITAL_ACT", "PORC_DESVIACION"}
+    if not columnas_necesarias.issubset(df7.columns):
+        st.error(f"❌ Faltan columnas requeridas: {columnas_necesarias - set(df7.columns)}")
+        st.stop()
+
+    # Capital en millones
+    df7["CAPITAL_MILLONES"] = pd.to_numeric(df7["CAPITAL_ACT"], errors="coerce") / 1_000_000
+    df7["PORC_DESVIACION"] = pd.to_numeric(df7["PORC_DESVIACION"], errors="coerce").fillna(0)
+
+    # ============================
+    # 📈 AGRUPACIÓN POR CLIENTE
+    # ============================
+    resumen_cliente = df7.groupby("DEUDOR").agg(
+        OPERACIONES=("SUB_ETAPA_JURIDICA", "count"),
+        SUBETAPAS_DISTINTAS=("SUB_ETAPA_JURIDICA", "nunique"),
+        CAPITAL_M=("CAPITAL_MILLONES", "sum"),
+        PROM_DESV=("PORC_DESVIACION", "mean")
+    ).reset_index()
+
+    # Clasificación de cliente
+    def estado_cliente(p):
+        if p == 0: return "🟢 A TIEMPO"
+        elif p > 0 and p <= 30: return "🟡 Riesgo leve"
+        else: return "🔴 DESVIADO"
+    resumen_cliente["ESTADO_CLIENTE"] = resumen_cliente["PROM_DESV"].apply(estado_cliente)
+
+    # Alerta de inconsistencia
+    resumen_cliente["ALERTA"] = resumen_cliente["SUBETAPAS_DISTINTAS"].apply(
+        lambda x: "⚠️ Revisar" if x > 1 else "✅ OK"
+    )
+
+    # ============================
+    # 🧾 MÉTRICAS EJECUTIVAS
+    # ============================
+    clientes_totales = len(resumen_cliente)
+    operaciones_totales = df7.shape[0]
+    capital_total = resumen_cliente["CAPITAL_M"].sum()
+    inconsistencias = (resumen_cliente["ALERTA"] == "⚠️ Revisar").sum()
+
+    st.header("📊 Paso 7 | Agregación por Cliente y Consistencias Multioperación")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("👤 Clientes totales", f"{clientes_totales:,}")
+    c2.metric("📁 Operaciones totales", f"{operaciones_totales:,}")
+    c3.metric("💰 Capital total", f"${capital_total:,.1f} M")
+    c4.metric("⚠️ Inconsistencias detectadas", f"{inconsistencias:,}")
+
+    # ============================
+    # 📋 TABLA FINAL
+    # ============================
+    resumen_cliente["PROM_DESV"] = resumen_cliente["PROM_DESV"].round(1)
+    resumen_cliente["CAPITAL_M"] = resumen_cliente["CAPITAL_M"].round(1)
+    resumen_cliente = resumen_cliente.sort_values("PROM_DESV", ascending=False)
+
+    st.subheader("📋 Consolidado por Cliente")
+    st.dataframe(
+        resumen_cliente[["DEUDOR", "OPERACIONES", "SUBETAPAS_DISTINTAS",
+                         "ESTADO_CLIENTE", "CAPITAL_M", "PROM_DESV", "ALERTA"]]
+        .style.format({
+            "CAPITAL_M": "{:,.1f}",
+            "PROM_DESV": "{:.1f} %",
+            "OPERACIONES": "{:,}"
+        }),
+        use_container_width=True,
+        height=600
+    )
+
+    # ============================
+    # 💾 DESCARGA FINAL
+    # ============================
+    output = BytesIO()
+    resumen_cliente.to_excel(output, index=False, sheet_name="Consolidado_Clientes", engine="openpyxl")
+    output.seek(0)
+
+    st.download_button(
+        "⬇️ Descargar Consolidado por Cliente (Paso 7)",
+        data=output,
+        file_name="Consolidado_Clientes_Paso7.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
