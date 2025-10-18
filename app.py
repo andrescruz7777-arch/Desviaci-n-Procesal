@@ -613,3 +613,160 @@ else:
         file_name="Clientes_Graves_Paso7.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+    # ============================================
+# 📊 PASO 8 — Próximos a Vencer (Riesgo del Mes Actual)
+# ============================================
+import pandas as pd
+import streamlit as st
+from io import BytesIO
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
+# ============================
+# 🎨 ESTILO OSCURO GLOBAL
+# ============================
+st.markdown("""
+<style>
+body, .stApp {
+    background-color: #0E1117 !important;
+    color: #FFFFFF !important;
+}
+h1, h2, h3, h4, h5, h6, label, .stMetricLabel, .stMetricValue {
+    color: #FFFFFF !important;
+}
+.dataframe th {
+    background-color: #1B1F24 !important;
+    color: #FFFFFF !important;
+    text-align: center !important;
+    border: 1px solid #333 !important;
+}
+.dataframe td {
+    color: #FFFFFF !important;
+    background-color: #121417 !important;
+    text-align: center !important;
+    border: 1px solid #333 !important;
+    font-family: 'Courier New', monospace;
+}
+.stDownloadButton > button {
+    background-color: #1B1F24 !important;
+    color: white !important;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-weight: bold;
+}
+.stDownloadButton > button:hover {
+    background-color: #2C313A !important;
+    border-color: #555;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ============================
+# ⚙️ CARGA BASE
+# ============================
+if "base_limpia" not in locals() and "base_limpia" not in st.session_state:
+    st.error("❌ No se encontró la base limpia del Paso 7. Ejecuta los pasos previos primero.")
+else:
+    df8 = st.session_state.get("base_limpia", base_limpia).copy()
+    df8.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df8.columns]
+
+    columnas_necesarias = {
+        "DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
+        "CAPITAL_ACT", "DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA", "FECHA_ACT_INVENTARIO"
+    }
+    if not columnas_necesarias.issubset(df8.columns):
+        st.error(f"❌ Faltan columnas requeridas: {columnas_necesarias - set(df8.columns)}")
+        st.stop()
+
+    # ============================
+    # 📅 CÁLCULO DE FECHAS Y RIESGOS
+    # ============================
+    df8["FECHA_ACT_INVENTARIO"] = pd.to_datetime(df8["FECHA_ACT_INVENTARIO"], errors="coerce")
+    df8["DIAS_POR_ETAPA"] = pd.to_numeric(df8["DIAS_POR_ETAPA"], errors="coerce")
+    df8["VAR_FECHA_CALCULADA"] = pd.to_numeric(df8["VAR_FECHA_CALCULADA"], errors="coerce")
+
+    # Días restantes para vencer el término
+    df8["DIAS_RESTANTES"] = df8["DIAS_POR_ETAPA"] - df8["VAR_FECHA_CALCULADA"]
+    df8["DIAS_RESTANTES"] = df8["DIAS_RESTANTES"].apply(lambda x: x if x > 0 else 0)
+
+    # Fecha límite del término
+    df8["FECHA_LIMITE"] = df8.apply(
+        lambda x: x["FECHA_ACT_INVENTARIO"] + pd.Timedelta(days=x["DIAS_RESTANTES"])
+        if pd.notnull(x["FECHA_ACT_INVENTARIO"]) else pd.NaT,
+        axis=1
+    )
+
+    # Días hasta fin de mes
+    hoy = datetime.now()
+    fin_mes = datetime(hoy.year, hoy.month, 1) + relativedelta(months=1) - relativedelta(days=1)
+    df8["DIAS_FIN_MES"] = (fin_mes - hoy).days
+
+    # Marcamos riesgo del mes (0 < DIAS_RESTANTES <= DIAS_FIN_MES)
+    df8["RIESGO_MES"] = df8.apply(
+        lambda x: "🟠 Próximo a vencer"
+        if 0 < x["DIAS_RESTANTES"] <= x["DIAS_FIN_MES"] else "",
+        axis=1
+    )
+
+    proximos = df8[df8["RIESGO_MES"] == "🟠 Próximo a vencer"].copy()
+    proximos["CAPITAL_MILLONES"] = pd.to_numeric(proximos["CAPITAL_ACT"], errors="coerce") / 1_000_000
+
+    # ============================
+    # 📊 MÉTRICAS
+    # ============================
+    procesos_totales = len(df8)
+    clientes_totales = df8["DEUDOR"].nunique()
+    capital_total = proximos["CAPITAL_MILLONES"].sum()
+    procesos_riesgo = len(proximos)
+
+    st.header("📊 Paso 8 | Próximos a Vencer (Riesgo del Mes Actual)")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("📁 Procesos totales", f"{procesos_totales:,}")
+    c2.metric("👤 Clientes únicos", f"{clientes_totales:,}")
+    c3.metric("💰 Capital en riesgo", f"${capital_total:,.1f} M")
+    c4.metric("🟠 Procesos próximos a vencer", f"{procesos_riesgo:,}")
+
+    # ============================
+    # 📋 TABLA PRINCIPAL
+    # ============================
+    if len(proximos) == 0:
+        st.info("✅ No hay procesos próximos a vencer este mes.")
+    else:
+        st.subheader("🟠 Procesos próximos a vencer dentro del mes")
+        columnas_mostrar = [
+            "DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
+            "DIAS_RESTANTES", "FECHA_LIMITE", "CAPITAL_ACT"
+        ]
+        # Agregar campos si existen
+        if "CIUDAD" in df8.columns: columnas_mostrar.append("CIUDAD")
+        if "JUZGADO" in df8.columns: columnas_mostrar.append("JUZGADO")
+
+        st.dataframe(
+            proximos[columnas_mostrar]
+            .sort_values("DIAS_RESTANTES")
+            .style.background_gradient(subset=["DIAS_RESTANTES"], cmap="YlOrRd_r")
+            .format({
+                "CAPITAL_ACT": "${:,.0f}",
+                "DIAS_RESTANTES": "{:.0f} días",
+                "FECHA_LIMITE": lambda x: x.strftime("%Y-%m-%d") if pd.notnull(x) else ""
+            }),
+            use_container_width=True,
+            height=600
+        )
+
+        # ============================
+        # 💾 DESCARGA
+        # ============================
+        output = BytesIO()
+        proximos.to_excel(output, index=False, sheet_name="Proximos_a_Vencer", engine="openpyxl")
+        output.seek(0)
+
+        st.download_button(
+            "⬇️ Descargar Procesos Próximos a Vencer (Paso 8)",
+            data=output,
+            file_name="Proximos_a_Vencer_Paso8.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
