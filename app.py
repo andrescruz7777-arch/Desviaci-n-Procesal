@@ -117,27 +117,36 @@ st.markdown("""
         color: #FFFFFF !important;
         font-weight: bold !important;
         text-align: center !important;
+        border: 1px solid #333 !important;
     }
     .dataframe td {
         color: #FFFFFF !important;
         background-color: #121417 !important;
         text-align: center !important;
+        border: 1px solid #333 !important;
     }
     .stDownloadButton > button {
         background-color: #1B1F24 !important;
         color: white !important;
         border: 1px solid #333;
         border-radius: 6px;
+        padding: 0.5rem 1rem;
+        font-weight: bold;
+    }
+    .stDownloadButton > button:hover {
+        background-color: #2C313A !important;
+        border-color: #555;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ============================
-# ⚙️ CARGA DE BASE
+# ⚙️ CARGA BASE DEL PASO 4
 # ============================
 if "base_limpia" not in locals() and "base_limpia" not in st.session_state:
     st.error("❌ No se encontró la base limpia del Paso 4. Ejecuta los pasos previos primero.")
 else:
+    # Traemos base desde session_state
     df5 = st.session_state.get("base_limpia", base_limpia).copy()
 
     # Normalizar columnas
@@ -150,16 +159,18 @@ else:
     df5["CAPITAL_MILLONES"] = df5["CAPITAL_ACT"] / 1_000_000
 
     # ============================
-    # 📈 CÁLCULOS
+    # 📈 CÁLCULOS PRINCIPALES
     # ============================
     df5["PORC_AVANCE"] = df5.apply(
         lambda x: (x["VAR_FECHA_CALCULADA"] / x["DIAS_POR_ETAPA"] * 100)
-        if x["DIAS_POR_ETAPA"] > 0 else 0, axis=1
+        if x["DIAS_POR_ETAPA"] > 0 else 0,
+        axis=1
     )
 
     df5["PORC_DESVIACION"] = df5.apply(
         lambda x: max(((x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"]) / x["DIAS_POR_ETAPA"]) * 100, 0)
-        if x["DIAS_POR_ETAPA"] > 0 else 0, axis=1
+        if x["DIAS_POR_ETAPA"] > 0 else 0,
+        axis=1
     )
 
     def clasif_desviacion(p):
@@ -197,10 +208,14 @@ else:
     resumen_estado["% DEL TOTAL"] = (resumen_estado["PROCESOS"] / total_procesos * 100).round(1)
 
     st.subheader("📋 Estado general de los procesos")
-    st.dataframe(resumen_estado.style.set_table_styles([
-        {"selector": "th", "props": [("background-color", "#1B1F24"), ("color", "white"), ("text-align", "center")]},
-        {"selector": "td", "props": [("color", "white"), ("background-color", "#121417"), ("text-align", "center")]}
-    ]).format({"CAPITAL": "{:,.1f}", "% DEL TOTAL": "{:.1f} %"}))
+    st.dataframe(
+        resumen_estado.style.format({
+            "CAPITAL": "{:,.1f}",
+            "% DEL TOTAL": "{:.1f} %"
+        }),
+        use_container_width=True,
+        height=150
+    )
 
     # ============================
     # 📋 TABLA 2 — GRAVEDAD
@@ -214,9 +229,14 @@ else:
         gravedad["% CAPITAL DESVIADO"] = (gravedad["CAPITAL"] / gravedad["CAPITAL"].sum() * 100).round(1)
 
         st.subheader("📋 Niveles de gravedad de desviación")
-        st.dataframe(gravedad.style.format({
-            "CAPITAL": "{:,.1f}", "% CAPITAL DESVIADO": "{:.1f} %"
-        }))
+        st.dataframe(
+            gravedad.style.format({
+                "CAPITAL": "{:,.1f}",
+                "% CAPITAL DESVIADO": "{:.1f} %"
+            }),
+            use_container_width=True,
+            height=150
+        )
 
     # ============================
     # 📋 TABLA 3 — RANKING POR ETAPA
@@ -233,9 +253,14 @@ else:
         etapa_rank.index = etapa_rank.index + 1
 
         st.subheader("🏛️ Ranking por Etapa Jurídica (Top 10)")
-        st.dataframe(etapa_rank.style.format({
-            "CAPITAL": "{:,.1f}", "PROM_DESV": "{:.1f} %"
-        }))
+        st.dataframe(
+            etapa_rank.style.format({
+                "CAPITAL": "{:,.1f}",
+                "PROM_DESV": "{:.1f} %"
+            }),
+            use_container_width=True,
+            height=250
+        )
 
     # ============================
     # 📋 TABLA 4 — RANKING POR SUBETAPA
@@ -252,9 +277,14 @@ else:
         sub_rank.index = sub_rank.index + 1
 
         st.subheader("📚 Ranking por Subetapa Jurídica (Top 15)")
-        st.dataframe(sub_rank.style.format({
-            "CAPITAL": "{:,.1f}", "PROM_DESV": "{:.1f} %"
-        }))
+        st.dataframe(
+            sub_rank.style.format({
+                "CAPITAL": "{:,.1f}",
+                "PROM_DESV": "{:.1f} %"
+            }),
+            use_container_width=True,
+            height=300
+        )
 
     # ============================
     # 💾 DESCARGA FINAL
@@ -268,4 +298,3 @@ else:
         file_name="Inventario_Paso5_Clasificado.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-
