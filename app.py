@@ -754,13 +754,27 @@ else:
             height=250
         )
 
-    # ============================
-    # 📋 TABLA PRINCIPAL
+        # ============================
+    # 📋 TABLA PRINCIPAL CON FILTRO POR SUBETAPA
     # ============================
     if len(proximos) == 0:
         st.info("✅ No hay procesos próximos a vencer este mes.")
     else:
         st.subheader("🟠 Procesos próximos a vencer dentro del mes")
+
+        # --- Filtro por subetapa
+        subetapas_unicas = sorted(proximos["SUB_ETAPA_JURIDICA"].dropna().unique())
+        filtro_subetapas = st.multiselect(
+            "🔍 Filtrar por Subetapa Jurídica:",
+            options=subetapas_unicas,
+            default=[],
+            help="Selecciona una o varias subetapas para filtrar la tabla. Si no seleccionas ninguna, se mostrarán todas."
+        )
+
+        if filtro_subetapas:
+            proximos_filtrados = proximos[proximos["SUB_ETAPA_JURIDICA"].isin(filtro_subetapas)]
+        else:
+            proximos_filtrados = proximos.copy()
 
         columnas_mostrar = [
             "DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
@@ -770,7 +784,7 @@ else:
         if "JUZGADO" in df8.columns: columnas_mostrar.append("JUZGADO")
 
         st.dataframe(
-            proximos[columnas_mostrar]
+            proximos_filtrados[columnas_mostrar]
             .sort_values("DIAS_RESTANTES")
             .style.background_gradient(subset=["DIAS_RESTANTES"], cmap="YlOrRd_r")
             .format({
@@ -783,17 +797,17 @@ else:
         )
 
         # ============================
-        # 💾 DESCARGA
+        # 💾 DESCARGA (RESPETA EL FILTRO)
         # ============================
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            proximos.to_excel(writer, index=False, sheet_name="Proximos_a_Vencer")
+            proximos_filtrados.to_excel(writer, index=False, sheet_name="Proximos_a_Vencer")
             resumen_subetapa.to_excel(writer, index=False, sheet_name="Resumen_Subetapa")
         output.seek(0)
 
         st.download_button(
-            "⬇️ Descargar Próximos a Vencer + Resumen por Subetapa",
+            "⬇️ Descargar Próximos a Vencer (según filtro)",
             data=output,
-            file_name="Proximos_a_Vencer_Paso8.xlsx",
+            file_name="Proximos_a_Vencer_Filtrado.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
