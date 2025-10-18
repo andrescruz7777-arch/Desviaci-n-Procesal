@@ -421,7 +421,7 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     # ============================================
-# 📊 PASO 7 — Agregación por Cliente con DIAS_EXCESO y Rangos de Días
+# 📊 PASO 7 — Clientes Críticos con Detalle Interactivo por Subetapa
 # ============================================
 import pandas as pd
 import streamlit as st
@@ -477,7 +477,8 @@ else:
     df7.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df7.columns]
 
     # Validación columnas mínimas
-    columnas_necesarias = {"DEUDOR", "CAPITAL_ACT", "PORC_DESVIACION", "DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA"}
+    columnas_necesarias = {"DEUDOR", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA", "CAPITAL_ACT",
+                           "PORC_DESVIACION", "DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA"}
     if not columnas_necesarias.issubset(df7.columns):
         st.error(f"❌ Faltan columnas requeridas: {columnas_necesarias - set(df7.columns)}")
         st.stop()
@@ -506,33 +507,22 @@ else:
     resumen_cliente["PROM_DESV"] = resumen_cliente["PROM_DESV"].round(1)
     resumen_cliente["DIAS_EXCESO_PROM"] = resumen_cliente["DIAS_EXCESO_PROM"].round(1)
 
-    # Clasificación por nivel de desviación
+    # Clasificación por nivel
     def nivel(p):
         if p <= 30: return "🟢 Leve"
         elif p <= 70: return "🟡 Moderada"
         else: return "🔴 Grave"
     resumen_cliente["NIVEL"] = resumen_cliente["PROM_DESV"].apply(nivel)
 
-    # ============================
-    # 📊 AGRUPADO POR NIVEL
-    # ============================
-    agrupado = resumen_cliente.groupby("NIVEL").agg(
-        CLIENTES=("DEUDOR", "count"),
-        OPERACIONES=("OPERACIONES", "sum"),
-        CAPITAL_M=("CAPITAL_M", "sum")
-    ).reset_index()
-
-    total_clientes = resumen_cliente["DEUDOR"].nunique()
-    agrupado["% CLIENTES"] = (agrupado["CLIENTES"] / total_clientes * 100).round(1)
-    total_capital = resumen_cliente["CAPITAL_M"].sum()
+    graves = resumen_cliente[resumen_cliente["NIVEL"] == "🔴 Grave"]
 
     # ============================
     # 🧾 PANEL EJECUTIVO
     # ============================
-    graves = resumen_cliente[resumen_cliente["NIVEL"] == "🔴 Grave"]
+    total_clientes = len(resumen_cliente)
+    total_capital = resumen_cliente["CAPITAL_M"].sum()
 
-    st.header("📊 Paso 7 | Riesgo por Cliente — Días de Exceso y Desviación")
-
+    st.header("📊 Paso 7 | Clientes Críticos con Detalle Interactivo")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("👤 Clientes totales", f"{total_clientes:,}")
     c2.metric("📁 Operaciones totales", f"{df7.shape[0]:,}")
@@ -540,22 +530,10 @@ else:
     c4.metric("🔴 Clientes críticos (Grave)", f"{len(graves):,}")
 
     # ============================
-    # 📋 TABLA 1 — RESUMEN POR NIVEL
+    # 📋 TABLA — CLIENTES CRÍTICOS
     # ============================
-    st.subheader("📋 Distribución de clientes por nivel de desviación")
-    st.dataframe(
-        agrupado.style.background_gradient(subset=["CAPITAL_M"], cmap="RdYlGn_r").format({
-            "CAPITAL_M": "{:,.1f}",
-            "% CLIENTES": "{:.1f} %"
-        }),
-        use_container_width=True,
-        height=200
-    )
+    st.subheader("🔴 Clientes Críticos (Grave) — Clic para ver detalle por subetapa")
 
-    # ============================
-    # 📋 TABLA 2 — CLIENTES CRÍTICOS
-    # ============================
-    st.subheader("🔴 Clientes Críticos (Grave) — Incluye Días de Exceso")
     st.dataframe(
         graves[["DEUDOR", "OPERACIONES", "CAPITAL_M", "PROM_DESV", "DIAS_EXCESO_PROM"]]
         .style.background_gradient(subset=["PROM_DESV"], cmap="Reds")
@@ -565,48 +543,47 @@ else:
             "DIAS_EXCESO_PROM": "{:.0f} días"
         }),
         use_container_width=True,
-        height=450
+        height=400
     )
 
     # ============================
-    # 📋 TABLA 3 — PROCESOS POR RANGO DE DÍAS EXCEDIDOS
+    # 🔍 DETALLE INTERACTIVO
     # ============================
-    st.subheader("⏰ Distribución de procesos según días de exceso")
+    st.markdown("### 🔎 Ver detalle de un cliente específico")
 
-    df7["RANGO_DIAS"] = pd.cut(
-        df7["DIAS_EXCESO"],
-        bins=[0, 14, 29, float("inf")],
-        labels=["1 a 14 días", "15 a 29 días", "≥ 30 días"],
-        right=True
+    cliente_seleccionado = st.selectbox(
+        "Selecciona un cliente para ver todas sus operaciones:",
+        options=graves["DEUDOR"].sort_values().unique()
     )
 
-    distribucion_dias = df7[df7["DIAS_EXCESO"] > 0].groupby("RANGO_DIAS").agg(
-        PROCESOS=("DEUDOR", "count"),
-        CLIENTES=("DEUDOR", "nunique"),
-        CAPITAL_M=("CAPITAL_MILLONES", "sum")
-    ).reset_index()
+    if cliente_seleccionado:
+        detalle = df7[df7["DEUDOR"] == cliente_seleccionado][
+            ["ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA", "VAR_FECHA_CALCULADA",
+             "DIAS_EXCESO", "CAPITAL_ACT", "PORC_DESVIACION"]
+        ].copy()
 
-    st.dataframe(
-        distribucion_dias.style.background_gradient(subset=["CAPITAL_M"], cmap="YlOrRd").format({
-            "CAPITAL_M": "{:,.1f}",
-            "PROCESOS": "{:,}",
-            "CLIENTES": "{:,}"
-        }),
-        use_container_width=True,
-        height=200
-    )
+        st.markdown(f"#### 📂 Detalle de operaciones — {cliente_seleccionado}")
+        st.dataframe(
+            detalle.style.background_gradient(subset=["PORC_DESVIACION"], cmap="Reds")
+            .format({
+                "CAPITAL_ACT": "${:,.0f}",
+                "PORC_DESVIACION": "{:.1f} %",
+                "DIAS_EXCESO": "{:.0f} días"
+            }),
+            use_container_width=True,
+            height=350
+        )
 
     # ============================
     # 💾 DESCARGA CASOS GRAVES
     # ============================
     output = BytesIO()
     graves.to_excel(output, index=False, sheet_name="Clientes_Graves", engine="openpyxl")
-    distribucion_dias.to_excel(output, sheet_name="Distribucion_Dias_Exceso", startrow=0, index=False)
     output.seek(0)
 
     st.download_button(
-        "⬇️ Descargar Clientes Críticos y Distribución (Paso 7)",
+        "⬇️ Descargar Clientes Críticos (Grave)",
         data=output,
-        file_name="Clientes_Graves_y_Distribucion_Paso7.xlsx",
+        file_name="Clientes_Graves_Paso7.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
