@@ -1,108 +1,66 @@
 import pandas as pd
-import unicodedata
 import streamlit as st
-import os
 from io import BytesIO
 
 # ============================
-# ⚙️ CONFIGURACIÓN INICIAL
+# ⚙️ CONFIGURACIÓN
 # ============================
-st.set_page_config(page_title="Paso 3 — Cruce de Días por Etapa", layout="wide")
-st.title("📅 Paso 3 | Completar 'DIAS POR ETAPA' automáticamente")
-
-# ============================
-# 📂 VALIDAR RUTA DE TIEMPOS
-# ============================
-tiempos_path = "Tabla_tiempos_etapas_desviacion.xlsx"
-
-if not os.path.exists(tiempos_path):
-    st.error(f"❌ No se encontró el archivo de tiempos en la raíz: {tiempos_path}")
-    st.stop()
-else:
-    st.info("📁 Archivo de tiempos cargado automáticamente desde el repositorio raíz.")
-
-# ============================
-# 🧹 FUNCIÓN DE NORMALIZACIÓN
-# ============================
-def normalizar_columna(col):
-    col = ''.join(c for c in unicodedata.normalize('NFD', col) if unicodedata.category(c) != 'Mn')
-    col = col.upper().replace("-", "_").replace(" ", "_")
-    col = ''.join(c for c in col if c.isalnum() or c == "_")
-    while "__" in col:
-        col = col.replace("__", "_")
-    return col.strip("_")
+st.set_page_config(page_title="Paso 4 — Recalcular VAR_FECHA_CALCULADA", layout="wide")
+st.title("📆 Paso 4 | Recalcular 'VAR FECHA ACT - FECHA INV' (VAR_FECHA_CALCULADA)")
 
 # ============================
 # 📤 SUBIR INVENTARIO
 # ============================
-inventario_file = st.file_uploader("Sube el Inventario (.xlsx)", type=["xlsx"])
+inventario_file = st.file_uploader("Sube el inventario con 'DIAS_POR_ETAPA' completado", type=["xlsx"])
 
 if inventario_file:
-    # ============================
-    # 🔽 CARGA Y NORMALIZACIÓN
-    # ============================
-    inventario = pd.read_excel(inventario_file)
-    tiempos = pd.read_excel(tiempos_path)
+    # Leer archivo
+    df = pd.read_excel(inventario_file)
 
-    inventario.columns = [normalizar_columna(c) for c in inventario.columns]
-    tiempos.columns = [normalizar_columna(c) for c in tiempos.columns]
+    # Normalizar encabezados
+    df.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df.columns]
 
-    # ============================
-    # 🔍 DEFINIR COLUMNAS CLAVE
-    # ============================
-    col_sub_inv = "SUB_ETAPA_JURIDICA"
-    col_sub_time = "DESCRIPCION_DE_LA_SUBETAPA"
-    col_dias = "DIAS_POR_ETAPA"
-    col_duracion = "DURACION_MAXIMA_EN_DIAS"
+    # Columnas clave
+    col_fecha_inv = "FECHA_ACT_INVENTARIO"
+    col_fecha_etapa = "FECHA_ACT_ETAPA"
 
-    # Crear columna si no existe
-    if col_dias not in inventario.columns:
-        inventario[col_dias] = None
+    # Asegurar formato fecha
+    df[col_fecha_inv] = pd.to_datetime(df[col_fecha_inv], errors="coerce")
+    df[col_fecha_etapa] = pd.to_datetime(df[col_fecha_etapa], errors="coerce")
 
-    # ============================
-    # 📊 CRUCE Y COMPLETADO
-    # ============================
-    vacias_antes = inventario[col_dias].isna().sum()
+    # Crear nueva columna VAR_FECHA_CALCULADA
+    df["VAR_FECHA_CALCULADA"] = (df[col_fecha_inv] - df[col_fecha_etapa]).dt.days
 
-    inventario = inventario.merge(
-        tiempos[[col_sub_time, col_duracion]],
-        how="left",
-        left_on=col_sub_inv,
-        right_on=col_sub_time,
-        suffixes=("", "_TIEMPOS")
-    )
+    # Contar vacíos y negativos
+    nulos = df["VAR_FECHA_CALCULADA"].isna().sum()
+    negativos = df[df["VAR_FECHA_CALCULADA"] < 0]
 
-    inventario[col_dias] = inventario[col_dias].fillna(inventario[col_duracion])
-    vacias_despues = inventario[col_dias].isna().sum()
+    # Mostrar métricas
+    st.subheader("📊 Resultados del cálculo")
+    st.write(f"Total registros: **{len(df):,}**")
+    st.write(f"Fechas incompletas (nulos): **{nulos:,}**")
+    st.write(f"Inconsistencias (días negativos): **{len(negativos):,}**")
 
-    # Subetapas sin match
-    sin_match = inventario[inventario[col_dias].isna()][col_sub_inv].dropna().unique().tolist()
-
-    # ============================
-    # 🧾 RESULTADOS EN PANTALLA
-    # ============================
-    st.subheader("📈 Resultados del Cruce")
-    st.write(f"Filas con 'DIAS_POR_ETAPA' vacías antes del cruce: **{vacias_antes:,}**")
-    st.write(f"Filas que permanecen vacías después del cruce: **{vacias_despues:,}**")
-
-    if len(sin_match) > 0:
-        st.warning(f"⚠️ {len(sin_match)} subetapas sin coincidencia en el catálogo de tiempos:")
-        st.dataframe(pd.DataFrame(sin_match, columns=["SUB_ETAPA_SIN_MATCH"]))
+    if len(negativos) > 0:
+        st.warning("⚠️ Se encontraron inconsistencias de fechas (valores negativos):")
+        st.dataframe(
+            negativos[
+                ["DEUDOR", "OPERACION", col_fecha_etapa, col_fecha_inv, "VAR_FECHA_CALCULADA"]
+            ].head(20)
+        )
     else:
-        st.success("✅ Todas las subetapas encontraron su duración máxima correctamente.")
+        st.success("✅ No se encontraron inconsistencias. Todas las fechas son coherentes.")
 
-    # ============================
-    # 💾 DESCARGA DEL INVENTARIO ACTUALIZADO
-    # ============================
+    # Descarga
     output = BytesIO()
-    inventario.to_excel(output, index=False, engine="openpyxl")
+    df.to_excel(output, index=False, engine="openpyxl")
     output.seek(0)
     st.download_button(
-        label="⬇️ Descargar Inventario Actualizado con DIAS_POR_ETAPA",
+        label="⬇️ Descargar Inventario con VAR_FECHA_CALCULADA",
         data=output,
-        file_name="Inventario_Actualizado_Paso3.xlsx",
+        file_name="Inventario_Actualizado_Paso4.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
 else:
-    st.info("Sube el archivo de Inventario (.xlsx) para ejecutar el cruce automático del Paso 3.")
+    st.info("Sube el inventario con 'DIAS_POR_ETAPA' completado para calcular la variación entre fechas.")
+
