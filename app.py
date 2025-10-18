@@ -291,7 +291,7 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     # ============================================
-# 📊 PASO 6 — Semaforización por Etapa y Subetapa (tema oscuro)
+# 📊 PASO 6 — Ranking visual por Etapa y Subetapa (tema oscuro)
 # ============================================
 import pandas as pd
 import streamlit as st
@@ -301,39 +301,40 @@ from io import BytesIO
 # 🎨 ESTILO OSCURO GLOBAL
 # ============================
 st.markdown("""
-    <style>
-    body, .stApp {
-        background-color: #0E1117 !important;
-        color: #FFFFFF !important;
-    }
-    h1, h2, h3, h4, h5, h6, label, .stMetricLabel, .stMetricValue {
-        color: #FFFFFF !important;
-    }
-    .dataframe th {
-        background-color: #1B1F24 !important;
-        color: #FFFFFF !important;
-        text-align: center !important;
-        border: 1px solid #333 !important;
-    }
-    .dataframe td {
-        color: #FFFFFF !important;
-        background-color: #121417 !important;
-        text-align: center !important;
-        border: 1px solid #333 !important;
-    }
-    .stDownloadButton > button {
-        background-color: #1B1F24 !important;
-        color: white !important;
-        border: 1px solid #333;
-        border-radius: 6px;
-        padding: 0.5rem 1rem;
-        font-weight: bold;
-    }
-    .stDownloadButton > button:hover {
-        background-color: #2C313A !important;
-        border-color: #555;
-    }
-    </style>
+<style>
+body, .stApp {
+    background-color: #0E1117 !important;
+    color: #FFFFFF !important;
+}
+h1, h2, h3, h4, h5, h6, label, .stMetricLabel, .stMetricValue {
+    color: #FFFFFF !important;
+}
+.dataframe th {
+    background-color: #1B1F24 !important;
+    color: #FFFFFF !important;
+    text-align: center !important;
+    border: 1px solid #333 !important;
+}
+.dataframe td {
+    color: #FFFFFF !important;
+    background-color: #121417 !important;
+    text-align: center !important;
+    border: 1px solid #333 !important;
+    font-family: 'Courier New', monospace;
+}
+.stDownloadButton > button {
+    background-color: #1B1F24 !important;
+    color: white !important;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-weight: bold;
+}
+.stDownloadButton > button:hover {
+    background-color: #2C313A !important;
+    border-color: #555;
+}
+</style>
 """, unsafe_allow_html=True)
 
 # ============================
@@ -343,87 +344,79 @@ if "base_limpia" not in locals() and "base_limpia" not in st.session_state:
     st.error("❌ No se encontró la base limpia del Paso 5. Ejecuta los pasos previos primero.")
 else:
     df6 = st.session_state.get("base_limpia", base_limpia).copy()
-
     df6.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df6.columns]
 
-    # Si no existe PORC_DESVIACION, la calculamos nuevamente
-    if "PORC_DESVIACION" not in df6.columns:
-        if "DIAS_POR_ETAPA" in df6.columns and "VAR_FECHA_CALCULADA" in df6.columns:
-            df6["DIAS_POR_ETAPA"] = pd.to_numeric(df6["DIAS_POR_ETAPA"], errors="coerce").fillna(0)
-            df6["VAR_FECHA_CALCULADA"] = pd.to_numeric(df6["VAR_FECHA_CALCULADA"], errors="coerce").fillna(0)
-            df6["PORC_DESVIACION"] = df6.apply(
-                lambda x: max(((x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"]) / x["DIAS_POR_ETAPA"]) * 100, 0)
-                if x["DIAS_POR_ETAPA"] > 0 else 0,
-                axis=1
-            )
-        else:
-            st.error("⚠️ No se encontraron columnas base para calcular la desviación.")
-            st.stop()
+    # Autocalcular desviación si no existe
+    if "PORC_DESVIACION" not in df6.columns and "DIAS_POR_ETAPA" in df6.columns and "VAR_FECHA_CALCULADA" in df6.columns:
+        df6["DIAS_POR_ETAPA"] = pd.to_numeric(df6["DIAS_POR_ETAPA"], errors="coerce").fillna(0)
+        df6["VAR_FECHA_CALCULADA"] = pd.to_numeric(df6["VAR_FECHA_CALCULADA"], errors="coerce").fillna(0)
+        df6["PORC_DESVIACION"] = df6.apply(
+            lambda x: max(((x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"]) / x["DIAS_POR_ETAPA"]) * 100, 0)
+            if x["DIAS_POR_ETAPA"] > 0 else 0,
+            axis=1
+        )
 
-    # Calcular capital en millones
+    # Capital en millones
     if "CAPITAL_ACT" in df6.columns:
         df6["CAPITAL_MILLONES"] = pd.to_numeric(df6["CAPITAL_ACT"], errors="coerce") / 1_000_000
     else:
-        st.warning("⚠️ No se encontró la columna CAPITAL_ACT. Se omitirá el cálculo de capital.")
         df6["CAPITAL_MILLONES"] = 0
-
-    st.session_state["base_limpia"] = df6  # 🔹 Guarda la base actualizada para uso futuro
-
-    st.header("📊 Paso 6 | Semaforización Etapa × Subetapa")
 
     # ============================
     # 📈 AGRUPACIÓN
     # ============================
-    matriz = df6.groupby(["ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA"]).agg(
+    resumen = df6.groupby(["ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA"]).agg(
         PROCESOS=("DEUDOR", "count"),
         CAPITAL_M=("CAPITAL_MILLONES", "sum"),
         PROM_DESV=("PORC_DESVIACION", "mean")
     ).reset_index()
 
-    matriz["PROM_DESV"] = matriz["PROM_DESV"].round(1)
-    matriz["CAPITAL_M"] = matriz["CAPITAL_M"].round(1)
+    resumen["PROM_DESV"] = resumen["PROM_DESV"].round(1)
+    resumen["CAPITAL_M"] = resumen["CAPITAL_M"].round(1)
 
-    st.subheader("📋 Resumen por Etapa y Subetapa")
+    # Clasificación por nivel
+    def nivel(p):
+        if p <= 30: return "🟢 Leve"
+        elif p <= 70: return "🟡 Moderada"
+        else: return "🔴 Grave"
+    resumen["NIVEL"] = resumen["PROM_DESV"].apply(nivel)
+
+    # Indicador visual tipo barra
+    resumen["INDICADOR"] = resumen["PROM_DESV"].apply(
+        lambda x: "█" * int(min(x / 5, 20))  # máx 20 bloques
+    )
+
+    # Ordenar por % desviación descendente
+    resumen = resumen.sort_values("PROM_DESV", ascending=False).reset_index(drop=True)
+
+    # ============================
+    # 📊 VISUALIZACIÓN
+    # ============================
+    st.header("📊 Paso 6 | Ranking Visual Etapa × Subetapa")
+    st.subheader("🔎 Desviación promedio, procesos y capital")
+
     st.dataframe(
-        matriz.style.background_gradient(subset=["PROM_DESV"], cmap="RdYlGn_r").format({
+        resumen[["ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA", "PROCESOS", "CAPITAL_M",
+                 "PROM_DESV", "NIVEL", "INDICADOR"]]
+        .style.format({
             "CAPITAL_M": "{:,.1f}",
             "PROM_DESV": "{:.1f} %",
             "PROCESOS": "{:,}"
         }),
         use_container_width=True,
-        height=400
-    )
-
-    # ============================
-    # 🧮 MATRIZ SEMAFORIZADA
-    # ============================
-    pivot = pd.pivot_table(
-        matriz,
-        values="PROM_DESV",
-        index="ETAPA_JURIDICA",
-        columns="SUB_ETAPA_JURIDICA",
-        aggfunc="mean"
-    ).round(1)
-
-    st.subheader("🟢🟡🔴 Matriz de Desviación Promedio (%) — Etapa × Subetapa")
-    st.dataframe(
-        pivot.style.background_gradient(cmap="RdYlGn_r", axis=None).format("{:.1f} %"),
-        use_container_width=True,
-        height=500
+        height=600
     )
 
     # ============================
     # 💾 DESCARGA FINAL
     # ============================
     output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        matriz.to_excel(writer, index=False, sheet_name="Resumen_Etapa_Subetapa")
-        pivot.to_excel(writer, sheet_name="Semaforizacion_Etapas")
+    resumen.to_excel(output, index=False, sheet_name="Ranking_Visual", engine="openpyxl")
     output.seek(0)
 
     st.download_button(
-        "⬇️ Descargar Matriz Semaforizada (Paso 6)",
+        "⬇️ Descargar Ranking Visual (Paso 6)",
         data=output,
-        file_name="Matriz_Semaforizada_Paso6.xlsx",
+        file_name="Ranking_Visual_Paso6.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
