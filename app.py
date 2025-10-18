@@ -290,3 +290,120 @@ else:
         file_name="Inventario_Paso5_Clasificado.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+    # ============================================
+# 📊 PASO 6 — Semaforización por Etapa y Subetapa (tema oscuro)
+# ============================================
+import pandas as pd
+import streamlit as st
+from io import BytesIO
+
+# ============================
+# 🎨 ESTILO OSCURO GLOBAL
+# ============================
+st.markdown("""
+    <style>
+    body, .stApp {
+        background-color: #0E1117 !important;
+        color: #FFFFFF !important;
+    }
+    h1, h2, h3, h4, h5, h6, label, .stMetricLabel, .stMetricValue {
+        color: #FFFFFF !important;
+    }
+    .dataframe th {
+        background-color: #1B1F24 !important;
+        color: #FFFFFF !important;
+        text-align: center !important;
+        border: 1px solid #333 !important;
+    }
+    .dataframe td {
+        color: #FFFFFF !important;
+        background-color: #121417 !important;
+        text-align: center !important;
+        border: 1px solid #333 !important;
+    }
+    .stDownloadButton > button {
+        background-color: #1B1F24 !important;
+        color: white !important;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 0.5rem 1rem;
+        font-weight: bold;
+    }
+    .stDownloadButton > button:hover {
+        background-color: #2C313A !important;
+        border-color: #555;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ============================
+# ⚙️ CARGA BASE
+# ============================
+if "base_limpia" not in locals() and "base_limpia" not in st.session_state:
+    st.error("❌ No se encontró la base limpia del Paso 5. Ejecuta los pasos previos primero.")
+else:
+    df6 = st.session_state.get("base_limpia", base_limpia).copy()
+
+    df6.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df6.columns]
+    df6["CAPITAL_MILLONES"] = pd.to_numeric(df6["CAPITAL_ACT"], errors="coerce") / 1_000_000
+    df6["PORC_DESVIACION"] = pd.to_numeric(df6["PORC_DESVIACION"], errors="coerce")
+
+    st.header("📊 Paso 6 | Semaforización Etapa × Subetapa")
+
+    # ============================
+    # 📈 AGRUPACIÓN
+    # ============================
+    matriz = df6.groupby(["ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA"]).agg(
+        PROCESOS=("DEUDOR", "count"),
+        CAPITAL_M=("CAPITAL_MILLONES", "sum"),
+        PROM_DESV=("PORC_DESVIACION", "mean")
+    ).reset_index()
+
+    matriz["PROM_DESV"] = matriz["PROM_DESV"].round(1)
+    matriz["CAPITAL_M"] = matriz["CAPITAL_M"].round(1)
+
+    st.subheader("📋 Resumen por Etapa y Subetapa")
+    st.dataframe(
+        matriz.style.background_gradient(subset=["PROM_DESV"], cmap="RdYlGn_r").format({
+            "CAPITAL_M": "{:,.1f}",
+            "PROM_DESV": "{:.1f} %",
+            "PROCESOS": "{:,}"
+        }),
+        use_container_width=True,
+        height=400
+    )
+
+    # ============================
+    # 🧮 MATRIZ SEMAFORIZADA
+    # ============================
+    pivot = pd.pivot_table(
+        matriz,
+        values="PROM_DESV",
+        index="ETAPA_JURIDICA",
+        columns="SUB_ETAPA_JURIDICA",
+        aggfunc="mean"
+    ).round(1)
+
+    st.subheader("🟢🟡🔴 Matriz de Desviación Promedio (%) — Etapa × Subetapa")
+    st.dataframe(
+        pivot.style.background_gradient(cmap="RdYlGn_r", axis=None).format("{:.1f} %"),
+        use_container_width=True,
+        height=500
+    )
+
+    # ============================
+    # 💾 DESCARGA FINAL
+    # ============================
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        matriz.to_excel(writer, index=False, sheet_name="Resumen_Etapa_Subetapa")
+        pivot.to_excel(writer, sheet_name="Semaforizacion_Etapas")
+    output.seek(0)
+
+    st.download_button(
+        "⬇️ Descargar Matriz Semaforizada (Paso 6)",
+        data=output,
+        file_name="Matriz_Semaforizada_Paso6.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
