@@ -1,10 +1,15 @@
 # ============================================================
-# ⚖️ COS JudicIA – Tablero Jurídico Inteligente (v1)
+# ⚖️ COS JudicIA – Tablero Jurídico Inteligente (v1 Cloud)
 # Autor: Andrés Cruz / Contacto Solutions LegalTech
-# Descripción: BI jurídico en Streamlit con depuración, ranking,
-# semaforización, alertas dinámicas y exportación Excel.
+# Descripción: BI jurídico en Streamlit Cloud con depuración,
+# ranking, semaforización, alertas dinámicas y exportación Excel.
 # ============================================================
 
+# --- Instalador automático para Streamlit Cloud ---
+import os
+os.system("pip install plotly==5.24.1 --quiet")
+
+# --- Librerías principales ---
 import streamlit as st
 import pandas as pd
 import plotly.express as px
