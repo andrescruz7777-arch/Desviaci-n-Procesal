@@ -1,18 +1,25 @@
 import pandas as pd
 import unicodedata
 import streamlit as st
+import os
+from io import BytesIO
 
 # ============================
 # ⚙️ CONFIGURACIÓN INICIAL
 # ============================
-st.set_page_config(page_title="Paso 3 — Cruce de días por etapa", layout="wide")
+st.set_page_config(page_title="Paso 3 — Cruce de Días por Etapa", layout="wide")
 st.title("📅 Paso 3 | Completar 'DIAS POR ETAPA' automáticamente")
 
 # ============================
-# 📂 RUTA DE ARCHIVOS
+# 📂 VALIDAR RUTA DE TIEMPOS
 # ============================
-tiempos_path = "Tabla_tiempos_etapas_desviacion.xlsx"  # 📁 desde el repositorio raíz
-inventario_file = st.file_uploader("Sube el Inventario (.xlsx)", type=["xlsx"])
+tiempos_path = "Tabla_tiempos_etapas_desviacion.xlsx"
+
+if not os.path.exists(tiempos_path):
+    st.error(f"❌ No se encontró el archivo de tiempos en la raíz: {tiempos_path}")
+    st.stop()
+else:
+    st.info("📁 Archivo de tiempos cargado automáticamente desde el repositorio raíz.")
 
 # ============================
 # 🧹 FUNCIÓN DE NORMALIZACIÓN
@@ -26,30 +33,37 @@ def normalizar_columna(col):
     return col.strip("_")
 
 # ============================
-# 🚀 EJECUCIÓN
+# 📤 SUBIR INVENTARIO
 # ============================
+inventario_file = st.file_uploader("Sube el Inventario (.xlsx)", type=["xlsx"])
+
 if inventario_file:
-    # Cargar datos (los encabezados ya se limpian en memoria, sin mostrar)
+    # ============================
+    # 🔽 CARGA Y NORMALIZACIÓN
+    # ============================
     inventario = pd.read_excel(inventario_file)
     tiempos = pd.read_excel(tiempos_path)
 
     inventario.columns = [normalizar_columna(c) for c in inventario.columns]
     tiempos.columns = [normalizar_columna(c) for c in tiempos.columns]
 
-    # Columnas clave
+    # ============================
+    # 🔍 DEFINIR COLUMNAS CLAVE
+    # ============================
     col_sub_inv = "SUB_ETAPA_JURIDICA"
     col_sub_time = "DESCRIPCION_DE_LA_SUBETAPA"
     col_dias = "DIAS_POR_ETAPA"
     col_duracion = "DURACION_MAXIMA_EN_DIAS"
 
-    # Conteo antes del cruce
-    vacias_antes = inventario[col_dias].isna().sum() if col_dias in inventario.columns else len(inventario)
-
-    # Si no existe la columna DIAS_POR_ETAPA, la creamos vacía
+    # Crear columna si no existe
     if col_dias not in inventario.columns:
         inventario[col_dias] = None
 
-    # Cruce (merge)
+    # ============================
+    # 📊 CRUCE Y COMPLETADO
+    # ============================
+    vacias_antes = inventario[col_dias].isna().sum()
+
     inventario = inventario.merge(
         tiempos[[col_sub_time, col_duracion]],
         how="left",
@@ -58,33 +72,37 @@ if inventario_file:
         suffixes=("", "_TIEMPOS")
     )
 
-    # Completar valores faltantes
     inventario[col_dias] = inventario[col_dias].fillna(inventario[col_duracion])
-
-    # Conteo después
     vacias_despues = inventario[col_dias].isna().sum()
 
     # Subetapas sin match
     sin_match = inventario[inventario[col_dias].isna()][col_sub_inv].dropna().unique().tolist()
 
     # ============================
-    # 📊 RESULTADOS EN PANTALLA
+    # 🧾 RESULTADOS EN PANTALLA
     # ============================
     st.subheader("📈 Resultados del Cruce")
     st.write(f"Filas con 'DIAS_POR_ETAPA' vacías antes del cruce: **{vacias_antes:,}**")
     st.write(f"Filas que permanecen vacías después del cruce: **{vacias_despues:,}**")
 
     if len(sin_match) > 0:
-        st.warning(f"⚠️ Hay {len(sin_match)} subetapas sin coincidencia. Revisa el catálogo:")
+        st.warning(f"⚠️ {len(sin_match)} subetapas sin coincidencia en el catálogo de tiempos:")
         st.dataframe(pd.DataFrame(sin_match, columns=["SUB_ETAPA_SIN_MATCH"]))
     else:
         st.success("✅ Todas las subetapas encontraron su duración máxima correctamente.")
 
-    # Guardar copia del inventario actualizado
+    # ============================
+    # 💾 DESCARGA DEL INVENTARIO ACTUALIZADO
+    # ============================
+    output = BytesIO()
+    inventario.to_excel(output, index=False, engine="openpyxl")
+    output.seek(0)
     st.download_button(
-        label="⬇️ Descargar Inventario actualizado con DIAS_POR_ETAPA",
-        data=inventario.to_excel(index=False, engine="openpyxl"),
-        file_name="Inventario_Actualizado_Paso3.xlsx"
+        label="⬇️ Descargar Inventario Actualizado con DIAS_POR_ETAPA",
+        data=output,
+        file_name="Inventario_Actualizado_Paso3.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
 else:
-    st.info("Sube el archivo de Inventario para ejecutar el cruce automático del Paso 3.")
+    st.info("Sube el archivo de Inventario (.xlsx) para ejecutar el cruce automático del Paso 3.")
