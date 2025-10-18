@@ -72,5 +72,14 @@ if inventario_file:
     # 💾 DESCARGA DE BASE LIMPIA (opcional)
     # ============================
     output_clean = BytesIO()
-    base_limpia.to_excel(output_clean, index=False, eng_
+    base_limpia.to_excel(output_clean, index=False, engine="openpyxl")
+    output_clean.seek(0)
+    st.download_button(
+        label="⬇️ Descargar Base Limpia para Paso 5",
+        data=output_clean,
+        file_name="Inventario_Limpio_Paso4.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
+else:
+    st.info("Sube el inventario con 'DIAS_POR_ETAPA' completado para recalcular la variación entre fechas.")
