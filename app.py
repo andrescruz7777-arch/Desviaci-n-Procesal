@@ -1,5 +1,5 @@
 # ============================================
-# ⚖️ ANÁLISIS DE DESVIACIÓN PROCESAL — COS
+# 📊 Desviación Procesal COS
 # Pasos 1 a 8 + Bloque Banco (resúmenes)
 # ============================================
 
@@ -14,7 +14,7 @@ from dateutil.relativedelta import relativedelta
 # ⚙️ CONFIGURACIÓN INICIAL
 # ============================================
 st.set_page_config(page_title="Desviación Procesal COS", layout="wide")
-st.title("⚖️ Análisis de Desviación Procesal — Contacto Solutions")
+st.title("📊 Desviación Procesal COS")
 
 # ============================
 # 🎨 ESTILO OSCURO GLOBAL
@@ -52,7 +52,7 @@ def normalizar_columna(col: str) -> str:
     return col.strip("_")
 
 # ============================================
-# 🔠 MAPA MESES (ES) — por si hay que derivarlos
+# 🔠 MAPA MESES (ES)
 # ============================================
 MESES_ES = {
     1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
@@ -70,7 +70,7 @@ if not inventario_file:
     st.info("📥 Sube el inventario (.xlsx) para iniciar.")
     st.stop()
 
-# Leer
+# Leer archivos
 inv = pd.read_excel(inventario_file)
 tiempos = pd.read_excel(tiempos_path)
 
@@ -96,7 +96,8 @@ inv = inv.merge(
 inv[col_dias] = inv[col_dias].fillna(inv[col_duracion])
 
 # ============================================
-# 📆 PASO 4 — CALCULAR VAR_FECHA_CALCULADA Y DEPURAR (NORMALIZANDO FECHA)
+# 📆 PASO 4 — CALCULAR VAR_FECHA_CALCULADA Y DEPURAR
+# (Resta de fecha normalizando a medianoche para ignorar horas)
 # ============================================
 for c in ["FECHA_ACT_INVENTARIO", "FECHA_ACT_ETAPA"]:
     if c not in inv.columns:
@@ -106,7 +107,6 @@ for c in ["FECHA_ACT_INVENTARIO", "FECHA_ACT_ETAPA"]:
 inv["FECHA_ACT_INVENTARIO"] = pd.to_datetime(inv["FECHA_ACT_INVENTARIO"], errors="coerce")
 inv["FECHA_ACT_ETAPA"] = pd.to_datetime(inv["FECHA_ACT_ETAPA"], errors="coerce")
 
-# Resta en días ignorando hora (normalizar a medianoche)
 inv["VAR_FECHA_CALCULADA"] = (
     inv["FECHA_ACT_INVENTARIO"].dt.normalize() - inv["FECHA_ACT_ETAPA"].dt.normalize()
 ).dt.days
@@ -134,23 +134,45 @@ base_limpia = inv.dropna(subset=["VAR_FECHA_CALCULADA"])
 base_limpia = base_limpia[base_limpia["VAR_FECHA_CALCULADA"] >= 0].copy()
 
 # ============================================
-# 🔀 FILTRO ESTRATÉGICO: COS vs BANCO (desde aquí se usan bases separadas)
+# 🧮 Utilidad: asegurar métricas (PORC_DESVIACION, numéricos, etc.)
 # ============================================
-# COS válidas (las únicas que cuentan para desviación)
+def ensure_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza numéricos y calcula PORC_DESVIACION si no existe."""
+    out = df.copy()
+    for c in ["DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA", "CAPITAL_ACT"]:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce")
+    out["DIAS_POR_ETAPA"] = out.get("DIAS_POR_ETAPA", 0).fillna(0)
+    out["VAR_FECHA_CALCULADA"] = out.get("VAR_FECHA_CALCULADA", 0).fillna(0)
+    out["CAPITAL_ACT"] = out.get("CAPITAL_ACT", 0).fillna(0)
+    if "PORC_DESVIACION" not in out.columns:
+        out["PORC_DESVIACION"] = out.apply(
+            lambda x: max(((x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"]) / x["DIAS_POR_ETAPA"]) * 100, 0)
+            if x["DIAS_POR_ETAPA"] and x["DIAS_POR_ETAPA"] > 0 else 0,
+            axis=1
+        )
+    else:
+        out["PORC_DESVIACION"] = pd.to_numeric(out["PORC_DESVIACION"], errors="coerce").fillna(0)
+    return out
+
+# ============================================
+# 🔀 FILTRO ESTRATÉGICO: COS vs BANCO
+# (solo estas 2 subetapas cuentan para desviación COS)
+# ============================================
 COS_VALIDAS = [
     ("PASE A LEGAL", "ENTREGA DE GARANTIAS"),
     ("PASE A LEGAL", "ENTREGA PODER"),
 ]
-# Banco (no cuentan para desviación COS)
 SUB_BANCO = {"EN TRAMITE", "RECEPCION GARANTIAS", "PODER PARA FIRMA", "RECEPCION PODER", "RETIRO"}
 
 # Normalizar llaves
 base_limpia["ETAPA_JURIDICA"] = base_limpia["ETAPA_JURIDICA"].astype(str).str.upper()
 base_limpia["SUB_ETAPA_JURIDICA"] = base_limpia["SUB_ETAPA_JURIDICA"].astype(str).str.upper()
+base_limpia["_KEY"] = list(zip(base_limpia["ETAPA_JURIDICA"], base_limpia["SUB_ETAPA_JURIDICA"]))
 
 # df_cos = solo 2 subetapas medibles
-base_limpia["_KEY"] = list(zip(base_limpia["ETAPA_JURIDICA"], base_limpia["SUB_ETAPA_JURIDICA"]))
 df_cos = base_limpia[base_limpia["_KEY"].isin(COS_VALIDAS)].copy()
+df_cos = ensure_metrics(df_cos)
 
 # df_banco = resto bajo control del banco (en PASE A LEGAL y dentro de SUB_BANCO)
 df_banco = base_limpia[
@@ -166,25 +188,19 @@ st.session_state["df_banco"] = df_banco
 # ============================================
 # 📊 PASO 5 — % Avance, % Desviación y Clasificación (solo COS)
 # ============================================
-if df_cos.empty:
-    st.warning("ℹ️ No hay registros COS (PASE A LEGAL → ENTREGA DE GARANTIAS / ENTREGA PODER) para calcular Paso 5.")
-else:
+if not df_cos.empty:
     df5 = df_cos.copy()
     df5.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df5.columns]
-    for c in ["DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA", "CAPITAL_ACT"]:
-        if c in df5.columns:
-            df5[c] = pd.to_numeric(df5[c], errors="coerce").fillna(0)
 
-    df5["CAPITAL_MILLONES"] = df5["CAPITAL_ACT"] / 1_000_000
+    # Capital en millones
+    df5["CAPITAL_MILLONES"] = pd.to_numeric(df5["CAPITAL_ACT"], errors="coerce").fillna(0) / 1_000_000
 
+    # Porcentajes (ya garantizados en ensure_metrics, pero reforzamos avance)
     df5["PORC_AVANCE"] = df5.apply(
         lambda x: (x["VAR_FECHA_CALCULADA"] / x["DIAS_POR_ETAPA"] * 100) if x["DIAS_POR_ETAPA"] > 0 else 0, axis=1
     )
-    df5["PORC_DESVIACION"] = df5.apply(
-        lambda x: max(((x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"]) / x["DIAS_POR_ETAPA"]) * 100, 0)
-        if x["DIAS_POR_ETAPA"] > 0 else 0, axis=1
-    )
 
+    # Clasificación visual
     def clasif_desviacion(p):
         if p <= 30: return "LEVE"
         if 31 <= p <= 70: return "MODERADA"
@@ -200,7 +216,6 @@ else:
     desviados = (df5["ESTADO_TIEMPO"] == "FUERA DE TIEMPO").sum()
 
     st.header("📊 Paso 5 | % Avance, % Desviación y Clasificación (COS)")
-
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🧾 Procesos totales", f"{total_procesos:,}")
     c2.metric("👤 Clientes únicos", f"{total_clientes:,}")
@@ -226,7 +241,7 @@ else:
         gravedad = desviados_df.groupby("NIVEL_DESVIACION").agg(
             PROCESOS=("NIVEL_DESVIACION", "count"), CAPITAL=("CAPITAL_MILLONES", "sum")
         ).reindex(["LEVE", "MODERADA", "GRAVE"]).fillna(0)
-        gravedad["% CAPITAL DESVIADO"] = (gravedad["CAPITAL"] / gravedad["CAPITAL"].sum() * 100).round(1)
+        gravedad["% CAPITAL DESVIADO"] = (gravedad["CAPITAL"] / max(gravedad["CAPITAL"].sum(), 1) * 100).round(1)
 
         st.subheader("📋 Niveles de gravedad de desviación")
         st.dataframe(
@@ -236,34 +251,28 @@ else:
             use_container_width=True, height=180
         )
 
+    # Ranking por Etapa (COS)
     if "ETAPA_JURIDICA" in df5.columns:
         etapa_rank = df5.groupby("ETAPA_JURIDICA").agg(
             PROCESOS=("DEUDOR", "count"), CAPITAL=("CAPITAL_MILLONES", "sum"),
             PROM_DESV=("PORC_DESVIACION", "mean")
-        ).sort_values("CAPITAL", ascending=False)
-        etapa_rank["PROM_DESV"] = etapa_rank["PROM_DESVIACION"] if "PROM_DESVIACION" in etapa_rank.columns else etapa_rank["PROM_DESV"]
+        ).reset_index().sort_values("CAPITAL", ascending=False)
         etapa_rank["PROM_DESV"] = etapa_rank["PROM_DESV"].round(1)
-        etapa_rank = etapa_rank.reset_index()
-        etapa_rank.index = etapa_rank.index + 1
-
         st.subheader("🏛️ Ranking por Etapa Jurídica (COS)")
         st.dataframe(
-            etapa_rank[["ETAPA_JURIDICA", "PROCESOS", "CAPITAL", "PROM_DESV"]]
-            .style.background_gradient(subset=["PROM_DESV"], cmap="RdYlGn_r").format({
+            etapa_rank.style.background_gradient(subset=["PROM_DESV"], cmap="RdYlGn_r").format({
                 "CAPITAL": "{:,.1f}", "PROM_DESV": "{:.1f} %"
             }),
             use_container_width=True, height=300
         )
 
+    # Ranking por Subetapa (COS)
     if "SUB_ETAPA_JURIDICA" in df5.columns:
         sub_rank = df5.groupby("SUB_ETAPA_JURIDICA").agg(
             PROCESOS=("DEUDOR", "count"), CAPITAL=("CAPITAL_MILLONES", "sum"),
             PROM_DESV=("PORC_DESVIACION", "mean")
-        ).sort_values("PROM_DESV", ascending=False)
+        ).reset_index().sort_values("PROM_DESV", ascending=False)
         sub_rank["PROM_DESV"] = sub_rank["PROM_DESV"].round(1)
-        sub_rank = sub_rank.reset_index()
-        sub_rank.index = sub_rank.index + 1
-
         st.subheader("📚 Ranking por Subetapa Jurídica (COS)")
         st.dataframe(
             sub_rank.style.background_gradient(subset=["PROM_DESV"], cmap="RdYlGn_r").format({
@@ -285,22 +294,13 @@ else:
 # ============================================
 # 📊 PASO 6 — Ranking visual Etapa × Subetapa (solo COS)
 # ============================================
-if df_cos.empty:
-    st.warning("ℹ️ No hay registros COS para el Paso 6.")
-else:
+if not df_cos.empty:
     df6 = df_cos.copy()
     df6.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df6.columns]
 
-    if "PORC_DESVIACION" not in df6.columns and "DIAS_POR_ETAPA" in df6.columns and "VAR_FECHA_CALCULADA" in df6.columns:
-        df6["DIAS_POR_ETAPA"] = pd.to_numeric(df6["DIAS_POR_ETAPA"], errors="coerce").fillna(0)
-        df6["VAR_FECHA_CALCULADA"] = pd.to_numeric(df6["VAR_FECHA_CALCULADA"], errors="coerce").fillna(0)
-        df6["PORC_DESVIACION"] = df6.apply(
-            lambda x: max(((x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"]) / x["DIAS_POR_ETAPA"]) * 100, 0)
-            if x["DIAS_POR_ETAPA"] > 0 else 0,
-            axis=1
-        )
-
-    df6["CAPITAL_MILLONES"] = pd.to_numeric(df6.get("CAPITAL_ACT", 0), errors="coerce") / 1_000_000
+    # Asegurar métrica
+    df6 = ensure_metrics(df6)
+    df6["CAPITAL_MILLONES"] = pd.to_numeric(df6.get("CAPITAL_ACT", 0), errors="coerce").fillna(0) / 1_000_000
 
     resumen = df6.groupby(["ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA"]).agg(
         PROCESOS=("DEUDOR", "count"),
@@ -310,6 +310,7 @@ else:
 
     resumen["PROM_DESV"] = resumen["PROM_DESV"].round(1)
     resumen["CAPITAL_M"] = resumen["CAPITAL_M"].round(1)
+
     def nivel(p): return "🟢 Leve" if p <= 30 else ("🟡 Moderada" if p <= 70 else "🔴 Grave")
     resumen["NIVEL"] = resumen["PROM_DESV"].apply(nivel)
     resumen["INDICADOR"] = resumen["PROM_DESV"].apply(lambda x: "█" * int(min(x/5, 20)))
@@ -336,19 +337,21 @@ else:
 
 # ============================================
 # 📊 PASO 7 — Clientes Críticos (COS) con Buscador Multicliente + Obligación
+# (PARCHE: sin exigir PORC_DESVIACION; se calcula con ensure_metrics)
 # ============================================
-if df_cos.empty:
-    st.warning("ℹ️ No hay registros COS para el Paso 7.")
-else:
-    df7 = df_cos.copy()
+df7 = df_cos.copy()
+if not df7.empty:
     df7.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df7.columns]
 
-    columnas_necesarias_7 = {"DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
-                             "CAPITAL_ACT", "PORC_DESVIACION", "DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA"}
-    if not columnas_necesarias_7.issubset(df7.columns):
-        st.error(f"❌ Faltan columnas requeridas (Paso 7): {columnas_necesarias_7 - set(df7.columns)}")
-    else:
-        df7["CAPITAL_MILLONES"] = pd.to_numeric(df7["CAPITAL_ACT"], errors="coerce") / 1_000_000
+    columnas_necesarias_7 = {
+        "DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
+        "CAPITAL_ACT", "DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA"
+    }
+    faltan_7 = columnas_necesarias_7 - set(df7.columns)
+    if not faltan_7:
+        df7 = ensure_metrics(df7)
+
+        df7["CAPITAL_MILLONES"] = pd.to_numeric(df7["CAPITAL_ACT"], errors="coerce").fillna(0) / 1_000_000
         df7["DIAS_EXCESO"] = df7.apply(
             lambda x: max(x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"], 0)
             if pd.notnull(x["VAR_FECHA_CALCULADA"]) and pd.notnull(x["DIAS_POR_ETAPA"]) else 0,
@@ -366,7 +369,8 @@ else:
         resumen_cliente["PROM_DESV"] = resumen_cliente["PROM_DESV"].round(1)
         resumen_cliente["DIAS_EXCESO_PROM"] = resumen_cliente["DIAS_EXCESO_PROM"].round(1)
 
-        def nivel_c(p): return "🟢 Leve" if p <= 30 else ("🟡 Moderada" if p <= 70 else "🔴 Grave")
+        def nivel_c(p): 
+            return "🟢 Leve" if p <= 30 else ("🟡 Moderada" if p <= 70 else "🔴 Grave")
         resumen_cliente["NIVEL"] = resumen_cliente["PROM_DESV"].apply(nivel_c)
         graves = resumen_cliente[resumen_cliente["NIVEL"] == "🔴 Grave"]
 
@@ -433,17 +437,14 @@ else:
 # ============================================
 # 📊 PASO 8 — Próximos a Vencer (COS) + Resumen por Subetapa + Filtro
 # ============================================
-if df_cos.empty:
-    st.warning("ℹ️ No hay registros COS para el Paso 8.")
-else:
+if not df_cos.empty:
     df8 = df_cos.copy()
     df8.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df8.columns]
 
     cols_need_8 = {"DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
                    "CAPITAL_ACT", "DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA", "FECHA_ACT_INVENTARIO"}
-    if not cols_need_8.issubset(df8.columns):
-        st.error(f"❌ Faltan columnas requeridas (Paso 8): {cols_need_8 - set(df8.columns)}")
-    else:
+    faltan_8 = cols_need_8 - set(df8.columns)
+    if not faltan_8:
         df8["FECHA_ACT_INVENTARIO"] = pd.to_datetime(df8["FECHA_ACT_INVENTARIO"], errors="coerce")
         df8["DIAS_POR_ETAPA"] = pd.to_numeric(df8["DIAS_POR_ETAPA"], errors="coerce")
         df8["VAR_FECHA_CALCULADA"] = pd.to_numeric(df8["VAR_FECHA_CALCULADA"], errors="coerce")
@@ -465,7 +466,7 @@ else:
         )
 
         proximos = df8[df8["RIESGO_MES"] == "🟠 Próximo a vencer"].copy()
-        proximos["CAPITAL_MILLONES"] = pd.to_numeric(proximos["CAPITAL_ACT"], errors="coerce") / 1_000_000
+        proximos["CAPITAL_MILLONES"] = pd.to_numeric(proximos["CAPITAL_ACT"], errors="coerce").fillna(0) / 1_000_000
 
         procesos_totales = len(df8)
         clientes_totales = df8["DEUDOR"].nunique()
@@ -473,13 +474,13 @@ else:
         procesos_riesgo = len(proximos)
 
         st.header("📊 Paso 8 | Próximos a Vencer (Riesgo del Mes Actual) — COS")
-
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("📁 Procesos totales", f"{procesos_totales:,}")
         c2.metric("👤 Clientes únicos", f"{clientes_totales:,}")
         c3.metric("💰 Capital en riesgo", f"${capital_riesgo:,.1f} M")
         c4.metric("🟠 Procesos próximos a vencer", f"{procesos_riesgo:,}")
 
+        # Resumen por subetapa
         if len(proximos) > 0:
             st.subheader("📋 Resumen por Subetapa Jurídica (Riesgo del Mes)")
             resumen_subetapa = proximos.groupby("SUB_ETAPA_JURIDICA").agg(
@@ -488,7 +489,7 @@ else:
                 CAPITAL_M=("CAPITAL_MILLONES", "sum")
             ).reset_index()
             resumen_subetapa["% PROCESOS"] = (
-                resumen_subetapa["PROCESOS"] / resumen_subetapa["PROCESOS"].sum() * 100
+                resumen_subetapa["PROCESOS"] / max(resumen_subetapa["PROCESOS"].sum(), 1) * 100
             ).round(1)
             resumen_subetapa = resumen_subetapa.sort_values("PROCESOS", ascending=False)
 
@@ -498,7 +499,7 @@ else:
                 use_container_width=True, height=250
             )
 
-        # Tabla con filtro por subetapa
+        # Tabla principal con filtro por subetapa
         if len(proximos) == 0:
             st.info("✅ No hay procesos próximos a vencer este mes.")
         else:
@@ -544,21 +545,17 @@ else:
             )
 
 # ============================================
-# 🏦 BLOQUE FINAL — Procesos bajo control del Banco
-# (No incluidos en SLA COS)
+# 🏦 BLOQUE FINAL — Procesos bajo control del Banco (No incluidos en SLA COS)
 # ============================================
 st.header("🏦 Procesos bajo control del Banco (No incluidos en SLA COS)")
 
-if df_banco.empty:
-    st.info("✅ No hay procesos bajo control del banco para mostrar.")
-else:
-    # Asegurar columnas de periodo (AÑO/MES) — si no existen, derivarlas de FECHA_ACT_ETAPA
+if not df_banco.empty:
     dfb = df_banco.copy()
     dfb["CAPITAL_ACT"] = pd.to_numeric(dfb.get("CAPITAL_ACT", 0), errors="coerce").fillna(0)
     dfb["CAPITAL_MILLONES"] = dfb["CAPITAL_ACT"] / 1_000_000
 
+    # Asegurar columnas de periodo: AÑO/MES. Si no existen, derivar desde FECHA_ACT_ETAPA
     if "AÑO_PASE_JURIDICO" not in dfb.columns or "MES_PASE_JURIDICO" not in dfb.columns:
-        # Derivar desde FECHA_ACT_ETAPA
         dfb["FECHA_PASE_JURIDICO"] = pd.to_datetime(dfb.get("FECHA_ACT_ETAPA", pd.NaT), errors="coerce")
         dfb["AÑO_PASE_JURIDICO"] = dfb["FECHA_PASE_JURIDICO"].dt.year
         dfb["MES_NUM"] = dfb["FECHA_PASE_JURIDICO"].dt.month
@@ -575,14 +572,12 @@ else:
         CLIENTES=("DEUDOR", "nunique")
     ).reset_index()
 
-    # Orden cronológico: si tenemos MES_NUM úsalo, sino aproximar por orden MESES_ES
+    # Orden cronológico
     if "MES_NUM" in dfb.columns:
         orden = dfb.groupby(["AÑO_PASE_JURIDICO", "MES_PASE_JURIDICO"])["MES_NUM"].min().reset_index()
         resumen_mensual = resumen_mensual.merge(orden, on=["AÑO_PASE_JURIDICO", "MES_PASE_JURIDICO"], how="left")
-        resumen_mensual = resumen_mensual.sort_values(["AÑO_PASE_JURIDICO", "MES_NUM"])
-        resumen_mensual.drop(columns=["MES_NUM"], inplace=True)
+        resumen_mensual = resumen_mensual.sort_values(["AÑO_PASE_JURIDICO", "MES_NUM"]).drop(columns=["MES_NUM"])
     else:
-        # Fallback: orden por año y por el índice del nombre del mes en MESES_ES
         mes_order = {v: k for k, v in MESES_ES.items()}
         resumen_mensual["MES_ORD"] = resumen_mensual["MES_PASE_JURIDICO"].map(mes_order)
         resumen_mensual = resumen_mensual.sort_values(["AÑO_PASE_JURIDICO", "MES_ORD"]).drop(columns=["MES_ORD"])
@@ -610,8 +605,7 @@ else:
     if "MES_NUM" in dfb.columns:
         orden2 = dfb.groupby(["AÑO_PASE_JURIDICO", "MES_PASE_JURIDICO"])["MES_NUM"].min().reset_index()
         resumen_sub_mensual = resumen_sub_mensual.merge(orden2, on=["AÑO_PASE_JURIDICO", "MES_PASE_JURIDICO"], how="left")
-        resumen_sub_mensual = resumen_sub_mensual.sort_values(["AÑO_PASE_JURIDICO", "MES_NUM", "SUB_ETAPA_JURIDICA"])
-        resumen_sub_mensual.drop(columns=["MES_NUM"], inplace=True)
+        resumen_sub_mensual = resumen_sub_mensual.sort_values(["AÑO_PASE_JURIDICO", "MES_NUM", "SUB_ETAPA_JURIDICA"]).drop(columns=["MES_NUM"])
     else:
         mes_order = {v: k for k, v in MESES_ES.items()}
         resumen_sub_mensual["MES_ORD"] = resumen_sub_mensual["MES_PASE_JURIDICO"].map(mes_order)
