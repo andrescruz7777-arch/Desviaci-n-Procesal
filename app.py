@@ -19,7 +19,7 @@ st.title("📊 Desviación Procesal COS")
 # ============================
 # 🎨 ESTILO OSCURO GLOBAL
 # ============================
-st.markdown(\"""
+st.markdown("""
 <style>
 body, .stApp { background-color: #0E1117 !important; color: #FFFFFF !important; }
 h1, h2, h3, h4, h5, h6, label, .stMetricLabel, .stMetricValue { color: #FFFFFF !important; }
