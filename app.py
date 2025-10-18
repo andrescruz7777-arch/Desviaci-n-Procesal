@@ -13,7 +13,7 @@ from dateutil.relativedelta import relativedelta
 # ============================================
 # ⚙️ CONFIGURACIÓN INICIAL
 # ============================================
-st.set_page_config(page_title="Desviación Procesal COS", layout="wide")
+st.set_page_config(page_title="Desviación Procesal GNB SUDAMERIS 🌳", layout="wide")
 st.title("📊 Desviación Procesal COS")
 # ============================
 # 🎨 ESTILO OSCURO GLOBAL
@@ -184,7 +184,7 @@ df_all = ensure_metrics_all(base_limpia.copy())
 st.session_state["base_limpia"] = df_all.copy()
 
 # ============================================
-# 📊 PASO 5 — % Avance, % Desviación y Clasificación (Global)
+# 📊 % Avance, % Desviación y Clasificación (Global)
 # ============================================
 df5 = df_all.copy()
 df5.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df5.columns]
@@ -268,7 +268,7 @@ st.download_button(
 )
 
 # ============================================
-# 📊 PASO 6 — Ranking visual Etapa × Subetapa (Global)
+# 📊 Ranking visual Etapa × Subetapa (Global)
 # ============================================
 df6 = df_all.copy()
 df6.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df6.columns]
@@ -309,7 +309,7 @@ st.download_button(
 )
 
 # ============================================
-# 📊 PASO 7 — Clientes Críticos (Global) con Buscador Multicliente + Obligación
+# 📊 Clientes Críticos (Global) (Busqueda segmentada)
 # ============================================
 df7 = df_all.copy()
 df7.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df7.columns]
@@ -399,7 +399,7 @@ st.download_button(
 )
 
 # ============================================
-# 📊 PASO 8 — Próximos a Vencer (Global) + Resumen por Subetapa + Filtro
+# 📊 Próximos a Vencer (Global) + Resumen por Subetapa 
 # ============================================
 df8 = df_all.copy()
 df8.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df8.columns]
