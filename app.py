@@ -622,3 +622,70 @@ else:
         data=out_banco, file_name="Procesos_Banco_Resumen.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+  # ============================================
+# 🤖 ANÁLISIS AUTOMÁTICO CON IA — EXPLICATIVO
+# ============================================
+
+st.markdown("### 🤖 Análisis Automático con IA — Contacto Solutions")
+
+try:
+    import openai
+    from datetime import datetime
+
+    openai.api_key = st.secrets["OPENAI_API_KEY"]
+
+    # Botón para ejecutar el análisis IA
+    if st.button("🧠 Generar Análisis de Desviación con IA"):
+        with st.spinner("Analizando información con IA..."):
+            # Resumen rápido del dataset global
+            total = len(df_all)
+            promedio = df_all.get("PORC_DESVIACION", pd.Series([0])).mean()
+            fuera = df_all[df_all.get("PORC_DESVIACION", 0) > 0.3].shape[0]
+            etapas_top = ", ".join(df_all["ETAPA_JURIDICA"].value_counts().head(3).index)
+
+            resumen = (
+                f"Total procesos: {total}. "
+                f"Promedio de desviación: {promedio:.2%}. "
+                f"Procesos fuera de tiempo (>30%): {fuera}. "
+                f"Etapas más frecuentes: {etapas_top}."
+            )
+
+            prompt = f"""
+Eres un analista judicial del área de control procesal de Contacto Solutions.
+Con base en estos datos:
+
+{resumen}
+
+Elabora un informe gerencial que incluya:
+1. Interpretación general de los resultados.
+2. Etapas con mayor desviación y posibles causas.
+3. Recomendaciones operativas para reducir desviaciones.
+4. Tono profesional y redactado para presentación a dirección jurídica.
+"""
+
+            # Llamada al modelo IA
+            respuesta = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Eres un experto en análisis judicial y control de tiempos procesales."},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=600,
+            )
+
+            texto_ia = respuesta.choices[0].message.content.strip()
+
+            st.success("✅ Análisis IA completado correctamente")
+            st.markdown("#### 📋 Resultado del análisis IA:")
+            st.markdown(texto_ia)
+
+            # Guardar el análisis con fecha en la sesión
+            st.session_state["analisis_ia_banco"] = {
+                "texto": texto_ia,
+                "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+
+except Exception as e:
+    st.warning(f"⚠️ No se pudo ejecutar el análisis IA: {e}")
+    st.info("Verifica que tu archivo `.streamlit/secrets.toml` contenga la clave `OPENAI_API_KEY`.")
+
