@@ -614,7 +614,7 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     # ============================================
-# 📊 PASO 8 — Próximos a Vencer (Riesgo del Mes Actual)
+# 📊 PASO 8 — Próximos a Vencer + Resumen por Subetapa
 # ============================================
 import pandas as pd
 import streamlit as st
@@ -686,23 +686,19 @@ else:
     df8["DIAS_POR_ETAPA"] = pd.to_numeric(df8["DIAS_POR_ETAPA"], errors="coerce")
     df8["VAR_FECHA_CALCULADA"] = pd.to_numeric(df8["VAR_FECHA_CALCULADA"], errors="coerce")
 
-    # Días restantes para vencer el término
     df8["DIAS_RESTANTES"] = df8["DIAS_POR_ETAPA"] - df8["VAR_FECHA_CALCULADA"]
     df8["DIAS_RESTANTES"] = df8["DIAS_RESTANTES"].apply(lambda x: x if x > 0 else 0)
 
-    # Fecha límite del término
     df8["FECHA_LIMITE"] = df8.apply(
         lambda x: x["FECHA_ACT_INVENTARIO"] + pd.Timedelta(days=x["DIAS_RESTANTES"])
         if pd.notnull(x["FECHA_ACT_INVENTARIO"]) else pd.NaT,
         axis=1
     )
 
-    # Días hasta fin de mes
     hoy = datetime.now()
     fin_mes = datetime(hoy.year, hoy.month, 1) + relativedelta(months=1) - relativedelta(days=1)
     df8["DIAS_FIN_MES"] = (fin_mes - hoy).days
 
-    # Marcamos riesgo del mes (0 < DIAS_RESTANTES <= DIAS_FIN_MES)
     df8["RIESGO_MES"] = df8.apply(
         lambda x: "🟠 Próximo a vencer"
         if 0 < x["DIAS_RESTANTES"] <= x["DIAS_FIN_MES"] else "",
@@ -729,17 +725,47 @@ else:
     c4.metric("🟠 Procesos próximos a vencer", f"{procesos_riesgo:,}")
 
     # ============================
+    # 📋 RESUMEN POR SUBETAPA
+    # ============================
+    if len(proximos) > 0:
+        st.subheader("📋 Resumen por Subetapa Jurídica (Riesgo del Mes)")
+
+        resumen_subetapa = proximos.groupby("SUB_ETAPA_JURIDICA").agg(
+            PROCESOS=("OPERACION", "count"),
+            CLIENTES=("DEUDOR", "nunique"),
+            CAPITAL_M=("CAPITAL_MILLONES", "sum")
+        ).reset_index()
+
+        resumen_subetapa["% PROCESOS"] = (
+            resumen_subetapa["PROCESOS"] / resumen_subetapa["PROCESOS"].sum() * 100
+        ).round(1)
+
+        resumen_subetapa = resumen_subetapa.sort_values("PROCESOS", ascending=False)
+
+        st.dataframe(
+            resumen_subetapa.style.background_gradient(subset=["CAPITAL_M"], cmap="YlOrRd")
+            .format({
+                "CAPITAL_M": "{:,.1f}",
+                "% PROCESOS": "{:.1f} %",
+                "PROCESOS": "{:,}",
+                "CLIENTES": "{:,}"
+            }),
+            use_container_width=True,
+            height=250
+        )
+
+    # ============================
     # 📋 TABLA PRINCIPAL
     # ============================
     if len(proximos) == 0:
         st.info("✅ No hay procesos próximos a vencer este mes.")
     else:
         st.subheader("🟠 Procesos próximos a vencer dentro del mes")
+
         columnas_mostrar = [
             "DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
             "DIAS_RESTANTES", "FECHA_LIMITE", "CAPITAL_ACT"
         ]
-        # Agregar campos si existen
         if "CIUDAD" in df8.columns: columnas_mostrar.append("CIUDAD")
         if "JUZGADO" in df8.columns: columnas_mostrar.append("JUZGADO")
 
@@ -753,20 +779,21 @@ else:
                 "FECHA_LIMITE": lambda x: x.strftime("%Y-%m-%d") if pd.notnull(x) else ""
             }),
             use_container_width=True,
-            height=600
+            height=550
         )
 
         # ============================
         # 💾 DESCARGA
         # ============================
         output = BytesIO()
-        proximos.to_excel(output, index=False, sheet_name="Proximos_a_Vencer", engine="openpyxl")
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            proximos.to_excel(writer, index=False, sheet_name="Proximos_a_Vencer")
+            resumen_subetapa.to_excel(writer, index=False, sheet_name="Resumen_Subetapa")
         output.seek(0)
 
         st.download_button(
-            "⬇️ Descargar Procesos Próximos a Vencer (Paso 8)",
+            "⬇️ Descargar Próximos a Vencer + Resumen por Subetapa",
             data=output,
             file_name="Proximos_a_Vencer_Paso8.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-
