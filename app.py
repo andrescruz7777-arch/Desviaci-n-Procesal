@@ -15,7 +15,6 @@ from dateutil.relativedelta import relativedelta
 # ============================================
 st.set_page_config(page_title="Desviación Procesal COS", layout="wide")
 st.title("📊 Desviación Procesal COS")
-
 # ============================
 # 🎨 ESTILO OSCURO GLOBAL
 # ============================
@@ -38,8 +37,7 @@ h1, h2, h3, h4, h5, h6, label, .stMetricLabel, .stMetricValue { color: #FFFFFF !
 .stDownloadButton > button:hover { background-color: #2C313A !important; border-color: #555; }
 .stAlert { background: #121417 !important; border: 1px solid #333 !important; }
 </style>
-\"\"\", unsafe_allow_html=True)
-
+""", unsafe_allow_html=True)
 # ============================================
 # 🧩 FUNCIÓN DE NORMALIZACIÓN DE COLUMNAS
 # ============================================
