@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 from io import BytesIO
+import unicodedata
 
 # ============================
 # ⚙️ CONFIGURACIÓN INICIAL
@@ -9,52 +10,77 @@ st.set_page_config(page_title="Paso 5 — Avance y Desviación", layout="wide")
 st.title("📊 Paso 5 | % Avance, % Desviación y Clasificación de Desviados")
 
 # ============================
+# 🔤 FUNCIÓN PARA NORMALIZAR ENCABEZADOS
+# ============================
+def normalizar_columna(col):
+    col = ''.join(
+        c for c in unicodedata.normalize('NFD', col)
+        if unicodedata.category(c) != 'Mn'
+    )
+    col = col.upper().replace("-", "_").replace(" ", "_")
+    col = ''.join(c for c in col if c.isalnum() or c == "_")
+    while "__" in col:
+        col = col.replace("__", "_")
+    return col.strip("_")
+
+# ============================
 # 📤 CARGA DE BASE LIMPIA
 # ============================
 inventario_file = st.file_uploader("Sube la base limpia del Paso 4 (.xlsx)", type=["xlsx"])
 
 if inventario_file:
     df = pd.read_excel(inventario_file)
-    df.columns = [c.upper().replace("-", "_").replace(" ", "_") for c in df.columns]
+    df.columns = [normalizar_columna(c) for c in df.columns]
+
+    # ============================
+    # 🔍 DETECCIÓN DE COLUMNAS CLAVE
+    # ============================
+    posibles_var = [c for c in df.columns if "VAR_FECHA_CALCULADA" in c]
+    posibles_dias = [c for c in df.columns if "DIAS_POR_ETAPA" in c]
+    posibles_capital = [c for c in df.columns if "CAPITAL_ACT" in c]
+
+    if not posibles_var:
+        st.error("❌ No se encontró la columna 'VAR_FECHA_CALCULADA'. Asegúrate de cargar la base limpia del Paso 4.")
+        st.stop()
+
+    col_var_fecha = posibles_var[0]
+    col_dias = posibles_dias[0] if posibles_dias else None
+    col_capital = posibles_capital[0] if posibles_capital else None
 
     # ============================
     # 🧮 CÁLCULOS DE INDICADORES
     # ============================
-    df["DIAS_POR_ETAPA"] = pd.to_numeric(df["DIAS_POR_ETAPA"], errors="coerce")
-    df["VAR_FECHA_CALCULADA"] = pd.to_numeric(df["VAR_FECHA_CALCULADA"], errors="coerce")
+    df[col_dias] = pd.to_numeric(df[col_dias], errors="coerce")
+    df[col_var_fecha] = pd.to_numeric(df[col_var_fecha], errors="coerce")
 
     # % Avance
     df["PORC_AVANCE"] = df.apply(
-        lambda x: (x["VAR_FECHA_CALCULADA"] / x["DIAS_POR_ETAPA"] * 100)
-        if x["DIAS_POR_ETAPA"] and x["DIAS_POR_ETAPA"] > 0 else 0,
+        lambda x: (x[col_var_fecha] / x[col_dias] * 100)
+        if x[col_dias] and x[col_dias] > 0 else 0,
         axis=1,
     )
 
-    # % Desviación (solo si supera el SLA)
+    # % Desviación
     df["PORC_DESVIACION"] = df.apply(
-        lambda x: max(((x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"]) / x["DIAS_POR_ETAPA"]) * 100, 0)
-        if x["DIAS_POR_ETAPA"] and x["DIAS_POR_ETAPA"] > 0 else 0,
+        lambda x: max(((x[col_var_fecha] - x[col_dias]) / x[col_dias]) * 100, 0)
+        if x[col_dias] and x[col_dias] > 0 else 0,
         axis=1,
     )
 
     # Días de exceso
-    df["DIAS_EXCESO"] = df["VAR_FECHA_CALCULADA"] - df["DIAS_POR_ETAPA"]
+    df["DIAS_EXCESO"] = df[col_var_fecha] - df[col_dias]
 
-    # Clasificación por porcentaje
-    def clasificar_porcentaje(p):
+    # Clasificaciones
+    def clasif_porcentaje(p):
         if p <= 30:
             return "LEVE 🟢"
         elif 31 <= p <= 70:
             return "MODERADA 🟡"
         elif p > 70:
             return "GRAVE 🔴"
-        else:
-            return "SIN_DATO ⚪️"
+        return "SIN_DATO ⚪️"
 
-    df["CLASIFICACION_%"] = df["PORC_DESVIACION"].apply(clasificar_porcentaje)
-
-    # Clasificación por días
-    def clasificar_dias(d):
+    def clasif_dias(d):
         if d <= 0:
             return "A TIEMPO ⚪️"
         elif 1 <= d <= 15:
@@ -63,17 +89,17 @@ if inventario_file:
             return "MEDIA 🟡"
         elif d > 30:
             return "ALTA 🔴"
-        else:
-            return "SIN_DATO ⚪️"
+        return "SIN_DATO ⚪️"
 
-    df["CLASIFICACION_DIAS"] = df["DIAS_EXCESO"].apply(clasificar_dias)
+    df["CLASIFICACION_%"] = df["PORC_DESVIACION"].apply(clasif_porcentaje)
+    df["CLASIFICACION_DIAS"] = df["DIAS_EXCESO"].apply(clasif_dias)
 
     # ============================
     # 📈 MÉTRICAS GLOBALES
     # ============================
     total_procesos = len(df)
     total_clientes = df["DEUDOR"].nunique() if "DEUDOR" in df.columns else 0
-    capital_total = df["CAPITAL_ACT"].sum() if "CAPITAL_ACT" in df.columns else 0
+    capital_total = df[col_capital].sum() if col_capital else 0
     desviados = (df["PORC_DESVIACION"] > 0).sum()
 
     st.header("📋 Resumen ejecutivo")
@@ -87,17 +113,11 @@ if inventario_file:
     # 📊 TABLA DE RESULTADOS
     # ============================
     st.subheader("📄 Vista previa (primeros 15 registros)")
-    st.dataframe(
-        df[
-            [
-                "DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
-                "DIAS_POR_ETAPA", "VAR_FECHA_CALCULADA", "PORC_AVANCE",
-                "PORC_DESVIACION", "DIAS_EXCESO",
-                "CLASIFICACION_%", "CLASIFICACION_DIAS", "CAPITAL_ACT"
-            ]
-        ].head(15),
-        use_container_width=True
-    )
+    cols_vista = [c for c in ["DEUDOR", "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
+                              col_dias, col_var_fecha, "PORC_AVANCE", "PORC_DESVIACION",
+                              "DIAS_EXCESO", "CLASIFICACION_%", "CLASIFICACION_DIAS", col_capital]
+                  if c in df.columns]
+    st.dataframe(df[cols_vista].head(15), use_container_width=True)
 
     # ============================
     # 💾 DESCARGA
@@ -114,4 +134,3 @@ if inventario_file:
 
 else:
     st.info("Sube la base limpia del Paso 4 para calcular % Avance y % Desviación.")
-
