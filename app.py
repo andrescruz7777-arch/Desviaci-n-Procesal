@@ -421,7 +421,7 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     # ============================================
-# 📊 PASO 7 — Clientes Críticos con Detalle Interactivo por Subetapa
+# 📊 PASO 7 — Clientes Críticos con Buscador Multicliente
 # ============================================
 import pandas as pd
 import streamlit as st
@@ -522,7 +522,7 @@ else:
     total_clientes = len(resumen_cliente)
     total_capital = resumen_cliente["CAPITAL_M"].sum()
 
-    st.header("📊 Paso 7 | Clientes Críticos con Detalle Interactivo")
+    st.header("📊 Paso 7 | Clientes Críticos con Buscador Multicliente")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("👤 Clientes totales", f"{total_clientes:,}")
     c2.metric("📁 Operaciones totales", f"{df7.shape[0]:,}")
@@ -532,7 +532,7 @@ else:
     # ============================
     # 📋 TABLA — CLIENTES CRÍTICOS
     # ============================
-    st.subheader("🔴 Clientes Críticos (Grave) — Clic para ver detalle por subetapa")
+    st.subheader("🔴 Clientes Críticos (Grave) — Selecciona uno o varios para ver detalle")
 
     st.dataframe(
         graves[["DEUDOR", "OPERACIONES", "CAPITAL_M", "PROM_DESV", "DIAS_EXCESO_PROM"]]
@@ -547,22 +547,22 @@ else:
     )
 
     # ============================
-    # 🔍 DETALLE INTERACTIVO
+    # 🔍 BUSCADOR MULTICLIENTE
     # ============================
-    st.markdown("### 🔎 Ver detalle de un cliente específico")
-
-    cliente_seleccionado = st.selectbox(
-        "Selecciona un cliente para ver todas sus operaciones:",
-        options=graves["DEUDOR"].sort_values().unique()
+    st.markdown("### 🔎 Buscar clientes para ver todas sus operaciones")
+    seleccion_clientes = st.multiselect(
+        "Escribe para buscar uno o varios clientes:",
+        options=graves["DEUDOR"].sort_values().unique(),
+        help="Puedes buscar por nombre o parte del texto y seleccionar varios"
     )
 
-    if cliente_seleccionado:
-        detalle = df7[df7["DEUDOR"] == cliente_seleccionado][
-            ["ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA", "VAR_FECHA_CALCULADA",
-             "DIAS_EXCESO", "CAPITAL_ACT", "PORC_DESVIACION"]
+    if seleccion_clientes:
+        detalle = df7[df7["DEUDOR"].isin(seleccion_clientes)][
+            ["DEUDOR", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA",
+             "VAR_FECHA_CALCULADA", "DIAS_EXCESO", "CAPITAL_ACT", "PORC_DESVIACION"]
         ].copy()
 
-        st.markdown(f"#### 📂 Detalle de operaciones — {cliente_seleccionado}")
+        st.markdown(f"#### 📂 Detalle de operaciones ({len(detalle)} registros)")
         st.dataframe(
             detalle.style.background_gradient(subset=["PORC_DESVIACION"], cmap="Reds")
             .format({
@@ -571,7 +571,19 @@ else:
                 "DIAS_EXCESO": "{:.0f} días"
             }),
             use_container_width=True,
-            height=350
+            height=400
+        )
+
+        # 📥 Descargar detalle filtrado
+        output_detalle = BytesIO()
+        detalle.to_excel(output_detalle, index=False, sheet_name="Detalle_Seleccion", engine="openpyxl")
+        output_detalle.seek(0)
+
+        st.download_button(
+            "⬇️ Descargar detalle filtrado",
+            data=output_detalle,
+            file_name="Detalle_Clientes_Seleccionados.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
     # ============================
@@ -582,7 +594,7 @@ else:
     output.seek(0)
 
     st.download_button(
-        "⬇️ Descargar Clientes Críticos (Grave)",
+        "⬇️ Descargar listado completo de Clientes Críticos",
         data=output,
         file_name="Clientes_Graves_Paso7.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
