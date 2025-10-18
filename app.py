@@ -1,5 +1,5 @@
 # ============================================================
-# ⚖️ COS JudicIA – Tablero Jurídico Inteligente (v2.2 Cloud)
+# ⚖️ COS JudicIA – Tablero Jurídico Inteligente (v3.0 Cloud)
 # Autor: Andrés Cruz / Contacto Solutions LegalTech
 # ============================================================
 
@@ -10,7 +10,7 @@ import io, calendar, unicodedata
 from datetime import datetime
 
 # ===============================
-# 🖤 CONFIGURACIÓN GENERAL
+# 🎨 CONFIGURACIÓN VISUAL
 # ===============================
 st.set_page_config(page_title="⚖️ COS JudicIA – Tablero Jurídico Inteligente", layout="wide")
 
@@ -28,7 +28,7 @@ table td,table th{color:#FFF!important;}
 """, unsafe_allow_html=True)
 
 st.title("⚖️ COS JudicIA – Tablero Jurídico Inteligente")
-st.markdown("Cargue el **inventario mensual** y la **tabla de tiempos por etapa**:")
+st.markdown("Cargue el **Inventario mensual (.xlsx)** y la **Tabla de tiempos por etapa (.xlsx)** para generar el análisis completo:")
 
 # ===============================
 # 📂 CARGA DE ARCHIVOS
@@ -37,7 +37,7 @@ inventario_file = st.file_uploader("📂 Inventario mensual (.xlsx)", type=["xls
 tiempos_file = st.file_uploader("⏱️ Tabla tiempos etapas (.xlsx)", type=["xlsx"])
 
 # ===============================
-# 🔧 NORMALIZADOR DE COLUMNAS
+# 🧩 FUNCIÓN: NORMALIZAR NOMBRES
 # ===============================
 def normalizar_col(col):
     col = str(col).upper().strip()
@@ -45,33 +45,60 @@ def normalizar_col(col):
     col = col.replace(" ", "_")
     return col
 
-# ============================================================
+# ===============================
 # 🚀 PROCESAMIENTO PRINCIPAL
-# ============================================================
+# ===============================
 if inventario_file and tiempos_file:
 
-    # === DETECCIÓN AUTOMÁTICA DE ENCABEZADO ===
+    # === DETECTAR FILA DE ENCABEZADO ===
     temp = pd.read_excel(inventario_file, header=None)
     header_row = None
     for i, row in temp.iterrows():
         fila = row.astype(str).str.upper()
-        if any(fila.str.contains("DEUDOR|OPERACION|SUB-ETAPA|ETAPA", na=False)):
+        if any(fila.str.contains("DEUDOR|OPERACION|SUB|ETAPA|CAPITAL", na=False)):
             header_row = i
             break
 
     if header_row is None:
-        st.error("❌ No se pudo detectar encabezado válido en el inventario.")
+        st.error("❌ No se pudo detectar encabezado válido en el inventario. Verifique el archivo.")
         st.stop()
 
     df = pd.read_excel(inventario_file, header=header_row)
     tiempos = pd.read_excel(tiempos_file)
 
-    # Normalizar encabezados
+    # === NORMALIZAR ENCABEZADOS ===
     df.columns = [normalizar_col(c) for c in df.columns]
     tiempos.columns = [normalizar_col(c) for c in tiempos.columns]
 
     st.write("📘 Columnas inventario detectadas:", list(df.columns))
     st.write("📗 Columnas tiempos detectadas:", list(tiempos.columns))
+
+    # === MAPEO AUTOMÁTICO DE COLUMNAS ===
+    def encontrar_columna(df, posibles):
+        for col in df.columns:
+            for p in posibles:
+                if p in col:
+                    return col
+        return None
+
+    mapa = {
+        "DEUDOR": encontrar_columna(df, ["DEUDOR", "CEDULA", "IDENTIFICACION"]),
+        "ETAPA_JURIDICA": encontrar_columna(df, ["ETAPA"]),
+        "SUB-ETAPA_JURIDICA": encontrar_columna(df, ["SUB", "SUBETAPA"]),
+        "CAPITAL_ACT": encontrar_columna(df, ["CAPITAL", "SALDO"]),
+        "CIUDAD": encontrar_columna(df, ["CIUDAD", "REGIONAL"]),
+        "JUZGADO": encontrar_columna(df, ["JUZGADO", "DESPACHO"]),
+        "FECHA_ACT_INVENTARIO": encontrar_columna(df, ["FECHA_ACT_INVENTARIO", "FECHA_INVENTARIO"]),
+        "FECHA_ACT_ETAPA": encontrar_columna(df, ["FECHA_ACT_ETAPA", "FECHA_ETAPA"]),
+    }
+
+    st.markdown("🔍 **Columnas identificadas automáticamente:**")
+    st.json(mapa)
+
+    # Renombrar columnas según el mapeo
+    for key, value in mapa.items():
+        if value and key != value:
+            df.rename(columns={value: key}, inplace=True)
 
     # === CRUCE CON TABLA DE TIEMPOS ===
     df = df.merge(
@@ -80,33 +107,30 @@ if inventario_file and tiempos_file:
         left_on='SUB-ETAPA_JURIDICA',
         right_on='DESCRIPCION_DE_LA_SUBETAPA'
     )
-
     if 'DIAS_POR_ETAPA' not in df.columns:
         df['DIAS_POR_ETAPA'] = None
     df['DIAS_POR_ETAPA'] = df['DIAS_POR_ETAPA'].fillna(df['DURACION_MAXIMA_EN_DIAS'])
     df.drop(columns=['DESCRIPCION_DE_LA_SUBETAPA', 'DURACION_MAXIMA_EN_DIAS'], inplace=True, errors='ignore')
 
     # === CONVERSIÓN DE FECHAS ===
-    df['FECHA_ACT_INVENTARIO'] = pd.to_datetime(df.get('FECHA_ACT_INVENTARIO', None), errors='coerce')
-    df['FECHA_ACT_ETAPA'] = pd.to_datetime(df.get('FECHA_ACT_ETAPA', None), errors='coerce')
+    df['FECHA_ACT_INVENTARIO'] = pd.to_datetime(df['FECHA_ACT_INVENTARIO'], errors='coerce')
+    df['FECHA_ACT_ETAPA'] = pd.to_datetime(df['FECHA_ACT_ETAPA'], errors='coerce')
 
-    # === CÁLCULO DE VAR FECHA ===
+    # === CÁLCULOS BASE ===
     df['VAR_FECHA_CALCULADA'] = (df['FECHA_ACT_INVENTARIO'] - df['FECHA_ACT_ETAPA']).dt.days.clip(lower=0)
-
-    # === PORCENTAJES ===
     df['%_AVANCE'] = (df['VAR_FECHA_CALCULADA'] / df['DIAS_POR_ETAPA'] * 100).round(2)
     df['%_DESVIACION'] = ((df['VAR_FECHA_CALCULADA'] - df['DIAS_POR_ETAPA']) / df['DIAS_POR_ETAPA'] * 100).clip(lower=0).round(2)
 
-    # === CLASIFICACIÓN ESTADO ===
     def clasificar_estado(row):
         if pd.isna(row['DIAS_POR_ETAPA']):
             return 'SIN_TIEMPO'
         if row['VAR_FECHA_CALCULADA'] > row['DIAS_POR_ETAPA']:
             return 'DESVIADO'
         return 'A_TIEMPO'
+
     df['ESTADO'] = df.apply(clasificar_estado, axis=1)
 
-    # === POSIBLES A VENCER ===
+    # === POSIBLES DESVÍOS ===
     today = df['FECHA_ACT_INVENTARIO'].max()
     ultimo_dia = calendar.monthrange(today.year, today.month)[1]
     dias_fin_mes = ultimo_dia - today.day
@@ -117,21 +141,17 @@ if inventario_file and tiempos_file:
     )
 
     # ===============================
-    # ⚠️ ALERTAS
+    # ⚠️ ALERTAS VISUALES
     # ===============================
     desviados = df[df['ESTADO'] == 'DESVIADO']
     posibles = df[df['ALERTA_MES'] != '']
     tiempo = df[df['ESTADO'] == 'A_TIEMPO']
     sin_dias = df[df['ESTADO'] == 'SIN_TIEMPO']
 
-    if len(desviados) > 0:
-        st.markdown(f"<div class='alerta rojo'>🚨 {len(desviados)} procesos desviados detectados.</div>", unsafe_allow_html=True)
-    if len(posibles) > 0:
-        st.markdown(f"<div class='alerta amarillo'>⚠️ {len(posibles)} procesos podrían desviarse este mes.</div>", unsafe_allow_html=True)
-    if len(tiempo) > 0:
-        st.markdown(f"<div class='alerta verde'>✅ {len(tiempo)} procesos dentro del plazo.</div>", unsafe_allow_html=True)
-    if len(sin_dias) > 0:
-        st.markdown(f"<div class='alerta morado'>🧩 {len(sin_dias)} registros sin días definidos.</div>", unsafe_allow_html=True)
+    if len(desviados): st.markdown(f"<div class='alerta rojo'>🚨 {len(desviados)} procesos desviados.</div>", unsafe_allow_html=True)
+    if len(posibles): st.markdown(f"<div class='alerta amarillo'>⚠️ {len(posibles)} procesos podrían desviarse este mes.</div>", unsafe_allow_html=True)
+    if len(tiempo): st.markdown(f"<div class='alerta verde'>✅ {len(tiempo)} procesos dentro del plazo.</div>", unsafe_allow_html=True)
+    if len(sin_dias): st.markdown(f"<div class='alerta morado'>🧩 {len(sin_dias)} sin días definidos.</div>", unsafe_allow_html=True)
 
     # ===============================
     # 📊 RANKING SUBETAPAS / ETAPAS
@@ -146,24 +166,21 @@ if inventario_file and tiempos_file:
         CLIENTES_DESVIADOS=('DESVIADO','sum'),
         CAPITAL_TOTAL=('CAPITAL','sum')
     ).reset_index()
-
     resumen['%_DESVIACION'] = (resumen['CLIENTES_DESVIADOS']/resumen['CLIENTES_TOTALES']*100).round(2)
     resumen['NIVEL'] = resumen['%_DESVIACION'].apply(lambda x:'🔴 ALTA' if x>70 else('🟡 MEDIA' if x>30 else '🟢 OK'))
 
     st.subheader("📈 Ranking por Subetapa Jurídica")
     st.dataframe(resumen.sort_values('%_DESVIACION', ascending=False), use_container_width=True)
 
-    fig = px.bar(
-        resumen.sort_values('%_DESVIACION', ascending=False),
-        x='%_DESVIACION', y='SUB-ETAPA_JURIDICA',
-        color='NIVEL', text='CLIENTES_TOTALES',
-        color_discrete_map={'🔴 ALTA':'red','🟡 MEDIA':'yellow','🟢 OK':'green'},
-        title='Ranking de Subetapas Jurídicas'
-    )
+    fig = px.bar(resumen.sort_values('%_DESVIACION', ascending=False),
+                 x='%_DESVIACION', y='SUB-ETAPA_JURIDICA',
+                 color='NIVEL', text='CLIENTES_TOTALES',
+                 color_discrete_map={'🔴 ALTA':'red','🟡 MEDIA':'yellow','🟢 OK':'green'},
+                 title='Ranking de Subetapas Jurídicas')
     fig.update_layout(template='plotly_dark')
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- Ranking de Etapas ---
+    # === RANKING ETAPAS ===
     ranking_etapas = resumen.groupby('ETAPA_JURIDICA').agg(
         CLIENTES_TOTALES=('CLIENTES_TOTALES','sum'),
         CLIENTES_DESVIADOS=('CLIENTES_DESVIADOS','sum'),
@@ -171,30 +188,26 @@ if inventario_file and tiempos_file:
     ).reset_index()
     ranking_etapas['%_DESVIACION'] = (ranking_etapas['CLIENTES_DESVIADOS']/ranking_etapas['CLIENTES_TOTALES']*100).round(2)
     ranking_etapas['NIVEL'] = ranking_etapas['%_DESVIACION'].apply(lambda x:'🔴 ALTA' if x>70 else('🟡 MEDIA' if x>30 else '🟢 OK'))
-
     st.subheader("📊 Ranking por Etapa Jurídica")
     st.dataframe(ranking_etapas.sort_values('%_DESVIACION', ascending=False), use_container_width=True)
 
-    # --- Clientes por Subetapa ---
-    clientes_sub = df[['DEUDOR','ETAPA_JURIDICA','SUB-ETAPA_JURIDICA','ESTADO',
-                       'CAPITAL_ACT','CIUDAD','JUZGADO','DIAS_POR_ETAPA','VAR_FECHA_CALCULADA',
-                       '%_AVANCE','%_DESVIACION']]
-
+    # === DETALLE CLIENTES ===
+    columnas_existentes = [c for c in ['DEUDOR','ETAPA_JURIDICA','SUB-ETAPA_JURIDICA','ESTADO','CAPITAL_ACT','CIUDAD','JUZGADO','DIAS_POR_ETAPA','VAR_FECHA_CALCULADA','%_AVANCE','%_DESVIACION'] if c in df.columns]
+    clientes_sub = df[columnas_existentes]
     st.subheader("📙 Detalle Clientes–Subetapa")
     st.dataframe(clientes_sub, use_container_width=True)
 
-    # --- Próximos a vencer ---
+    # === PRÓXIMOS A VENCER ===
     st.subheader("🕒 Próximos a vencer en el mes")
     proximos = df[df['ALERTA_MES'] != '']
-    st.dataframe(proximos[['DEUDOR','ETAPA_JURIDICA','SUB-ETAPA_JURIDICA',
-                           'DIAS_RESTANTES','CAPITAL_ACT','CIUDAD','JUZGADO']], use_container_width=True)
+    st.dataframe(proximos[['DEUDOR','ETAPA_JURIDICA','SUB-ETAPA_JURIDICA','DIAS_RESTANTES','CAPITAL_ACT','CIUDAD','JUZGADO']], use_container_width=True)
 
-    # --- Semaforización ---
+    # === SEMAFORIZACIÓN ===
     st.subheader("🚦 Semaforización por Etapa y Subetapa")
     semaf = resumen.pivot(index='ETAPA_JURIDICA', columns='SUB-ETAPA_JURIDICA', values='%_DESVIACION')
     st.dataframe(semaf.style.background_gradient(cmap='RdYlGn_r'), use_container_width=True)
 
-    # --- Exportación Excel ---
+    # === EXPORTACIÓN EXCEL ===
     st.subheader("💾 Exportar resultados")
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -209,7 +222,6 @@ if inventario_file and tiempos_file:
                        data=output,
                        file_name="Inventario_Depurado_Completo.xlsx",
                        mime="application/vnd.ms-excel")
-
 else:
     st.info("📤 Cargue los dos archivos para iniciar el análisis.")
 
