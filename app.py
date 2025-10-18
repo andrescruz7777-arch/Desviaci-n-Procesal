@@ -1,5 +1,5 @@
 # ============================================================
-# ⚖️ COS JudicIA – Tablero Jurídico Inteligente (v3.0 Cloud)
+# ⚖️ COS JudicIA – Tablero Jurídico Inteligente (v3.1 Cloud)
 # Autor: Andrés Cruz / Contacto Solutions LegalTech
 # ============================================================
 
@@ -37,7 +37,7 @@ inventario_file = st.file_uploader("📂 Inventario mensual (.xlsx)", type=["xls
 tiempos_file = st.file_uploader("⏱️ Tabla tiempos etapas (.xlsx)", type=["xlsx"])
 
 # ===============================
-# 🧩 FUNCIÓN: NORMALIZAR NOMBRES
+# 🧩 NORMALIZAR NOMBRES
 # ===============================
 def normalizar_col(col):
     col = str(col).upper().strip()
@@ -127,7 +127,6 @@ if inventario_file and tiempos_file:
         if row['VAR_FECHA_CALCULADA'] > row['DIAS_POR_ETAPA']:
             return 'DESVIADO'
         return 'A_TIEMPO'
-
     df['ESTADO'] = df.apply(clasificar_estado, axis=1)
 
     # === POSIBLES DESVÍOS ===
@@ -154,18 +153,27 @@ if inventario_file and tiempos_file:
     if len(sin_dias): st.markdown(f"<div class='alerta morado'>🧩 {len(sin_dias)} sin días definidos.</div>", unsafe_allow_html=True)
 
     # ===============================
+    # 🧩 NORMALIZAR COLUMNAS ANTES DEL AGRUPAMIENTO
+    # ===============================
+    for col in ['ETAPA_JURIDICA', 'SUB-ETAPA_JURIDICA', 'DEUDOR']:
+        if col not in df.columns:
+            df[col] = "NO_REGISTRA"
+        else:
+            df[col] = df[col].astype(str).fillna("NO_REGISTRA")
+
+    # ===============================
     # 📊 RANKING SUBETAPAS / ETAPAS
     # ===============================
-    df_ranking = df.groupby(['ETAPA_JURIDICA','SUB-ETAPA_JURIDICA','DEUDOR']).agg(
+    df_ranking = df.groupby(['ETAPA_JURIDICA','SUB-ETAPA_JURIDICA','DEUDOR'], as_index=False).agg(
         DESVIADO=('ESTADO', lambda s: any(s == 'DESVIADO')),
         CAPITAL=('CAPITAL_ACT','sum')
-    ).reset_index()
+    )
 
-    resumen = df_ranking.groupby(['ETAPA_JURIDICA','SUB-ETAPA_JURIDICA']).agg(
+    resumen = df_ranking.groupby(['ETAPA_JURIDICA','SUB-ETAPA_JURIDICA'], as_index=False).agg(
         CLIENTES_TOTALES=('DEUDOR','nunique'),
         CLIENTES_DESVIADOS=('DESVIADO','sum'),
         CAPITAL_TOTAL=('CAPITAL','sum')
-    ).reset_index()
+    )
     resumen['%_DESVIACION'] = (resumen['CLIENTES_DESVIADOS']/resumen['CLIENTES_TOTALES']*100).round(2)
     resumen['NIVEL'] = resumen['%_DESVIACION'].apply(lambda x:'🔴 ALTA' if x>70 else('🟡 MEDIA' if x>30 else '🟢 OK'))
 
@@ -181,13 +189,14 @@ if inventario_file and tiempos_file:
     st.plotly_chart(fig, use_container_width=True)
 
     # === RANKING ETAPAS ===
-    ranking_etapas = resumen.groupby('ETAPA_JURIDICA').agg(
+    ranking_etapas = resumen.groupby('ETAPA_JURIDICA', as_index=False).agg(
         CLIENTES_TOTALES=('CLIENTES_TOTALES','sum'),
         CLIENTES_DESVIADOS=('CLIENTES_DESVIADOS','sum'),
         CAPITAL_TOTAL=('CAPITAL_TOTAL','sum')
-    ).reset_index()
+    )
     ranking_etapas['%_DESVIACION'] = (ranking_etapas['CLIENTES_DESVIADOS']/ranking_etapas['CLIENTES_TOTALES']*100).round(2)
     ranking_etapas['NIVEL'] = ranking_etapas['%_DESVIACION'].apply(lambda x:'🔴 ALTA' if x>70 else('🟡 MEDIA' if x>30 else '🟢 OK'))
+
     st.subheader("📊 Ranking por Etapa Jurídica")
     st.dataframe(ranking_etapas.sort_values('%_DESVIACION', ascending=False), use_container_width=True)
 
@@ -224,4 +233,3 @@ if inventario_file and tiempos_file:
                        mime="application/vnd.ms-excel")
 else:
     st.info("📤 Cargue los dos archivos para iniciar el análisis.")
-
