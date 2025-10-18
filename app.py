@@ -5,88 +5,86 @@ import streamlit as st
 # ============================
 # ⚙️ CONFIGURACIÓN INICIAL
 # ============================
-st.set_page_config(page_title="Validación de Inventario Jurídico", layout="wide")
-st.title("🧭 Paso 1 → 2 | Validación de Carga y Limpieza de Encabezados")
+st.set_page_config(page_title="Paso 3 — Cruce de días por etapa", layout="wide")
+st.title("📅 Paso 3 | Completar 'DIAS POR ETAPA' automáticamente")
 
 # ============================
-# 📂 CARGA DE ARCHIVOS
+# 📂 RUTA DE ARCHIVOS
 # ============================
-st.header("📂 1️⃣ Cargar archivos de Inventario y Tiempos")
+tiempos_path = "Tabla_tiempos_etapas_desviacion.xlsx"  # 📁 desde el repositorio raíz
+inventario_file = st.file_uploader("Sube el Inventario (.xlsx)", type=["xlsx"])
 
-inventario_file = st.file_uploader("Sube el archivo de Inventario (.xlsx)", type=["xlsx"])
-tiempos_file = st.file_uploader("Sube el archivo de Tiempos (.xlsx)", type=["xlsx"])
+# ============================
+# 🧹 FUNCIÓN DE NORMALIZACIÓN
+# ============================
+def normalizar_columna(col):
+    col = ''.join(c for c in unicodedata.normalize('NFD', col) if unicodedata.category(c) != 'Mn')
+    col = col.upper().replace("-", "_").replace(" ", "_")
+    col = ''.join(c for c in col if c.isalnum() or c == "_")
+    while "__" in col:
+        col = col.replace("__", "_")
+    return col.strip("_")
 
-if inventario_file and tiempos_file:
-    inventario = pd.read_excel(inventario_file, nrows=0)
-    tiempos = pd.read_excel(tiempos_file, nrows=0)
+# ============================
+# 🚀 EJECUCIÓN
+# ============================
+if inventario_file:
+    # Cargar datos (los encabezados ya se limpian en memoria, sin mostrar)
+    inventario = pd.read_excel(inventario_file)
+    tiempos = pd.read_excel(tiempos_path)
 
-    # Mostrar encabezados detectados
-    st.subheader("📘 Columnas detectadas – Inventario (originales)")
-    st.write(list(inventario.columns))
+    inventario.columns = [normalizar_columna(c) for c in inventario.columns]
+    tiempos.columns = [normalizar_columna(c) for c in tiempos.columns]
 
-    st.subheader("📗 Columnas detectadas – Tiempos (originales)")
-    st.write(list(tiempos.columns))
+    # Columnas clave
+    col_sub_inv = "SUB_ETAPA_JURIDICA"
+    col_sub_time = "DESCRIPCION_DE_LA_SUBETAPA"
+    col_dias = "DIAS_POR_ETAPA"
+    col_duracion = "DURACION_MAXIMA_EN_DIAS"
 
-    # Verificación de claves
-    col_inv_ok = any("SUB-ETAPA JURIDICA" in c for c in inventario.columns)
-    col_time_ok = any("Descripción de la Subetapa" in c for c in tiempos.columns)
+    # Conteo antes del cruce
+    vacias_antes = inventario[col_dias].isna().sum() if col_dias in inventario.columns else len(inventario)
 
-    st.markdown("### 🔎 Claves detectadas:")
-    st.write("✅ SUB-ETAPA JURIDICA en Inventario:" if col_inv_ok else "❌ Falta SUB-ETAPA JURIDICA")
-    st.write("✅ Descripción de la Subetapa en Tiempos:" if col_time_ok else "❌ Falta Descripción de la Subetapa")
+    # Si no existe la columna DIAS_POR_ETAPA, la creamos vacía
+    if col_dias not in inventario.columns:
+        inventario[col_dias] = None
 
-    if col_inv_ok and col_time_ok:
-        st.success("✅ Paso 1 OK — Archivos y encabezados correctos.")
-    else:
-        st.warning("⚠️ Revisa los encabezados antes de continuar.")
+    # Cruce (merge)
+    inventario = inventario.merge(
+        tiempos[[col_sub_time, col_duracion]],
+        how="left",
+        left_on=col_sub_inv,
+        right_on=col_sub_time,
+        suffixes=("", "_TIEMPOS")
+    )
+
+    # Completar valores faltantes
+    inventario[col_dias] = inventario[col_dias].fillna(inventario[col_duracion])
+
+    # Conteo después
+    vacias_despues = inventario[col_dias].isna().sum()
+
+    # Subetapas sin match
+    sin_match = inventario[inventario[col_dias].isna()][col_sub_inv].dropna().unique().tolist()
 
     # ============================
-    # 🧹 2️⃣ LIMPIEZA DE ENCABEZADOS
+    # 📊 RESULTADOS EN PANTALLA
     # ============================
+    st.subheader("📈 Resultados del Cruce")
+    st.write(f"Filas con 'DIAS_POR_ETAPA' vacías antes del cruce: **{vacias_antes:,}**")
+    st.write(f"Filas que permanecen vacías después del cruce: **{vacias_despues:,}**")
 
-    st.header("🧹 Paso 2 | Limpieza mínima de encabezados")
-
-    def normalizar_columna(col):
-        col = ''.join(
-            c for c in unicodedata.normalize('NFD', col)
-            if unicodedata.category(c) != 'Mn'
-        )
-        col = col.upper().replace("-", "_").replace(" ", "_")
-        col = ''.join(c for c in col if c.isalnum() or c == "_")
-        while "__" in col:
-            col = col.replace("__", "_")
-        return col.strip("_")
-
-    inv_cols_original = inventario.columns.tolist()
-    time_cols_original = tiempos.columns.tolist()
-
-    inv_cols_norm = [normalizar_columna(c) for c in inv_cols_original]
-    time_cols_norm = [normalizar_columna(c) for c in time_cols_original]
-
-    st.subheader("📘 Inventario – Encabezados normalizados")
-    st.write(inv_cols_norm)
-
-    st.subheader("📗 Tiempos – Encabezados normalizados")
-    st.write(time_cols_norm)
-
-    # ✅ Chequeos
-    same_inv = len(inv_cols_original) == len(inv_cols_norm)
-    same_time = len(time_cols_original) == len(time_cols_norm)
-
-    st.markdown("### ✅ Chequeos automáticos")
-    st.write("Inventario: columnas iguales antes/después →", "✅" if same_inv else "❌")
-    st.write("Tiempos: columnas iguales antes/después →", "✅" if same_time else "❌")
-
-    key_inv = any("SUB_ETAPA_JURIDICA" in c for c in inv_cols_norm)
-    key_time = any("DESCRIPCION_DE_LA_SUBETAPA" in c for c in time_cols_norm)
-
-    st.write("🔑 SUB_ETAPA_JURIDICA presente:", "✅" if key_inv else "❌")
-    st.write("🔑 DESCRIPCION_DE_LA_SUBETAPA presente:", "✅" if key_time else "❌")
-
-    if same_inv and same_time and key_inv and key_time:
-        st.success("✅ Paso 2 OK — Sin pérdida ni duplicados. Encabezados listos para cruce.")
+    if len(sin_match) > 0:
+        st.warning(f"⚠️ Hay {len(sin_match)} subetapas sin coincidencia. Revisa el catálogo:")
+        st.dataframe(pd.DataFrame(sin_match, columns=["SUB_ETAPA_SIN_MATCH"]))
     else:
-        st.warning("⚠️ Revisa los encabezados normalizados antes de continuar.")
+        st.success("✅ Todas las subetapas encontraron su duración máxima correctamente.")
 
+    # Guardar copia del inventario actualizado
+    st.download_button(
+        label="⬇️ Descargar Inventario actualizado con DIAS_POR_ETAPA",
+        data=inventario.to_excel(index=False, engine="openpyxl"),
+        file_name="Inventario_Actualizado_Paso3.xlsx"
+    )
 else:
-    st.info("Sube ambos archivos (.xlsx) para iniciar la validación de encabezados.")
+    st.info("Sube el archivo de Inventario para ejecutar el cruce automático del Paso 3.")
