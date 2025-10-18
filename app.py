@@ -14,7 +14,7 @@ from dateutil.relativedelta import relativedelta
 # ⚙️ CONFIGURACIÓN INICIAL
 # ============================================
 st.set_page_config(page_title="Desviación Procesal GNB SUDAMERIS 🌳", layout="wide")
-st.title("📊 Desviación Procesal COS")
+st.title("📊 Desviación Procesal GNB SUDAMERIS 🌳")
 # ============================
 # 🎨 ESTILO OSCURO GLOBAL
 # ============================
