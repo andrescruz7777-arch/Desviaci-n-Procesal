@@ -94,7 +94,7 @@ if inventario_file:
     base_limpia = base_limpia[base_limpia["VAR_FECHA_CALCULADA"] >= 0].copy()
 
    # ============================================
-# 📊 PASO 5 — % Avance, % Desviación y Clasificación (solo tablas, tema oscuro)
+# 📊 PASO 5 — Tablas visuales completas, tema oscuro (sin límite de filas)
 # ============================================
 import pandas as pd
 import streamlit as st
@@ -112,19 +112,6 @@ st.markdown("""
     h1, h2, h3, h4, h5, h6, label, .stMetricLabel, .stMetricValue {
         color: #FFFFFF !important;
     }
-    .dataframe th {
-        background-color: #1B1F24 !important;
-        color: #FFFFFF !important;
-        font-weight: bold !important;
-        text-align: center !important;
-        border: 1px solid #333 !important;
-    }
-    .dataframe td {
-        color: #FFFFFF !important;
-        background-color: #121417 !important;
-        text-align: center !important;
-        border: 1px solid #333 !important;
-    }
     .stDownloadButton > button {
         background-color: #1B1F24 !important;
         color: white !important;
@@ -141,12 +128,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================
-# ⚙️ CARGA BASE DEL PASO 4
+# ⚙️ CARGA BASE
 # ============================
 if "base_limpia" not in locals() and "base_limpia" not in st.session_state:
     st.error("❌ No se encontró la base limpia del Paso 4. Ejecuta los pasos previos primero.")
 else:
-    # Traemos base desde session_state
     df5 = st.session_state.get("base_limpia", base_limpia).copy()
 
     # Normalizar columnas
@@ -159,18 +145,16 @@ else:
     df5["CAPITAL_MILLONES"] = df5["CAPITAL_ACT"] / 1_000_000
 
     # ============================
-    # 📈 CÁLCULOS PRINCIPALES
+    # 📈 CÁLCULOS
     # ============================
     df5["PORC_AVANCE"] = df5.apply(
         lambda x: (x["VAR_FECHA_CALCULADA"] / x["DIAS_POR_ETAPA"] * 100)
-        if x["DIAS_POR_ETAPA"] > 0 else 0,
-        axis=1
+        if x["DIAS_POR_ETAPA"] > 0 else 0, axis=1
     )
 
     df5["PORC_DESVIACION"] = df5.apply(
         lambda x: max(((x["VAR_FECHA_CALCULADA"] - x["DIAS_POR_ETAPA"]) / x["DIAS_POR_ETAPA"]) * 100, 0)
-        if x["DIAS_POR_ETAPA"] > 0 else 0,
-        axis=1
+        if x["DIAS_POR_ETAPA"] > 0 else 0, axis=1
     )
 
     def clasif_desviacion(p):
@@ -209,7 +193,9 @@ else:
 
     st.subheader("📋 Estado general de los procesos")
     st.dataframe(
-        resumen_estado.style.format({
+        resumen_estado.style.background_gradient(
+            subset=["CAPITAL"], cmap="Greens"
+        ).format({
             "CAPITAL": "{:,.1f}",
             "% DEL TOTAL": "{:.1f} %"
         }),
@@ -230,60 +216,66 @@ else:
 
         st.subheader("📋 Niveles de gravedad de desviación")
         st.dataframe(
-            gravedad.style.format({
+            gravedad.style.background_gradient(
+                subset=["% CAPITAL DESVIADO"], cmap="RdYlGn_r"
+            ).format({
                 "CAPITAL": "{:,.1f}",
                 "% CAPITAL DESVIADO": "{:.1f} %"
             }),
             use_container_width=True,
-            height=150
+            height=180
         )
 
     # ============================
-    # 📋 TABLA 3 — RANKING POR ETAPA
+    # 🏛️ TABLA 3 — TODAS LAS ETAPAS
     # ============================
     if "ETAPA_JURIDICA" in df5.columns:
         etapa_rank = df5.groupby("ETAPA_JURIDICA").agg(
             PROCESOS=("DEUDOR", "count"),
             CAPITAL=("CAPITAL_MILLONES", "sum"),
             PROM_DESV=("PORC_DESVIACION", "mean")
-        ).sort_values("CAPITAL", ascending=False).head(10)
+        ).sort_values("CAPITAL", ascending=False)
 
         etapa_rank["PROM_DESV"] = etapa_rank["PROM_DESV"].round(1)
         etapa_rank = etapa_rank.reset_index()
         etapa_rank.index = etapa_rank.index + 1
 
-        st.subheader("🏛️ Ranking por Etapa Jurídica (Top 10)")
+        st.subheader("🏛️ Ranking por Etapa Jurídica (todas)")
         st.dataframe(
-            etapa_rank.style.format({
+            etapa_rank.style.background_gradient(
+                subset=["PROM_DESV"], cmap="RdYlGn_r"
+            ).format({
                 "CAPITAL": "{:,.1f}",
                 "PROM_DESV": "{:.1f} %"
             }),
             use_container_width=True,
-            height=250
+            height=300
         )
 
     # ============================
-    # 📋 TABLA 4 — RANKING POR SUBETAPA
+    # 📚 TABLA 4 — TODAS LAS SUBETAPAS
     # ============================
     if "SUB_ETAPA_JURIDICA" in df5.columns:
         sub_rank = df5.groupby("SUB_ETAPA_JURIDICA").agg(
             PROCESOS=("DEUDOR", "count"),
             CAPITAL=("CAPITAL_MILLONES", "sum"),
             PROM_DESV=("PORC_DESVIACION", "mean")
-        ).sort_values("PROM_DESV", ascending=False).head(15)
+        ).sort_values("PROM_DESV", ascending=False)
 
         sub_rank["PROM_DESV"] = sub_rank["PROM_DESV"].round(1)
         sub_rank = sub_rank.reset_index()
         sub_rank.index = sub_rank.index + 1
 
-        st.subheader("📚 Ranking por Subetapa Jurídica (Top 15)")
+        st.subheader("📚 Ranking por Subetapa Jurídica (todas)")
         st.dataframe(
-            sub_rank.style.format({
+            sub_rank.style.background_gradient(
+                subset=["PROM_DESV"], cmap="RdYlGn_r"
+            ).format({
                 "CAPITAL": "{:,.1f}",
                 "PROM_DESV": "{:.1f} %"
             }),
             use_container_width=True,
-            height=300
+            height=350
         )
 
     # ============================
