@@ -303,7 +303,7 @@ out6 = BytesIO()
 resumen.to_excel(out6, index=False, sheet_name="Ranking_Visual_Global", engine="openpyxl")
 out6.seek(0)
 st.download_button(
-    "⬇️ Descargar Ranking Visual (Paso 6 - Global)",
+    "⬇️ Descargar Ranking",
     data=out6, file_name="Ranking_Visual_Paso6_Global.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
