@@ -772,4 +772,70 @@ Firma como:
 except Exception as e:
     st.warning(f"⚠️ No se pudo ejecutar el análisis IA: {e}")
     st.info("Verifica tu archivo `.streamlit/secrets.toml` con la clave `OPENAI_API_KEY`.")
+  # ============================================
+# 💬 CHRIS IA 🩵 — Asistente Conversacional Jurídico
+# ============================================
+
+st.markdown("### 💬 CHRIS IA 🩵 — Asistente Conversacional Jurídico Procesal")
+
+try:
+    from openai import OpenAI
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+    if "chat_chris" not in st.session_state:
+        st.session_state["chat_chris"] = [
+            {"role": "system", "content": """
+Eres CHRIS IA 🩵, un abogado especialista en derecho comercial y cobranza judicial bancaria.
+Tienes acceso al DataFrame `df_all`, que contiene información sobre procesos judiciales: 
+etapa, subetapa, desviación porcentual, fechas y capital.
+Responde con tono profesional, técnico y claro. 
+Cuando cites datos o valores, usa lenguaje explicativo (“se observa que”, “en promedio”, “la mayoría de los casos…”).
+"""}
+        ]
+
+    # Campo de entrada de usuario
+    pregunta = st.chat_input("Escribe tu pregunta jurídica sobre los procesos...")
+
+    # Mostrar historial del chat
+    for msg in st.session_state["chat_chris"][1:]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Procesar nueva pregunta
+    if pregunta:
+        st.session_state["chat_chris"].append({"role": "user", "content": pregunta})
+        with st.chat_message("user"):
+            st.markdown(pregunta)
+
+        # Construir resumen breve del dataset para contexto (máx 2000 caracteres)
+        resumen_df = ""
+        if "ETAPA_JURIDICA" in df_all.columns and "PORC_DESVIACION" in df_all.columns:
+            resumen_df = df_all.groupby("ETAPA_JURIDICA")["PORC_DESVIACION"].mean().round(2).to_string()
+
+        prompt_context = f"""
+Datos disponibles de procesos judiciales:
+{resumen_df}
+
+Pregunta del usuario:
+{pregunta}
+
+Responde como CHRIS IA 🩵, con tono de abogado analista judicial del sector bancario colombiano.
+"""
+
+        with st.chat_message("assistant"):
+            with st.spinner("CHRIS IA está analizando tu consulta..."):
+                respuesta = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=st.session_state["chat_chris"] + [{"role": "user", "content": prompt_context}],
+                    max_tokens=600,
+                )
+                respuesta_texto = respuesta.choices[0].message.content.strip()
+                st.markdown(respuesta_texto)
+
+        st.session_state["chat_chris"].append({"role": "assistant", "content": respuesta_texto})
+
+except Exception as e:
+    st.warning(f"⚠️ Error al ejecutar el chat de CHRIS IA: {e}")
+    st.info("Verifica que tu archivo `.streamlit/secrets.toml` tenga la clave OPENAI_API_KEY configurada correctamente.")
+
 
