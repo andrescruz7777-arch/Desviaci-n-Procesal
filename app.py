@@ -839,89 +839,86 @@ Si se te proporcionan resultados de cálculos, utiliza los porcentajes y montos 
             st.markdown(pregunta)
 
         # =======================================================
-        # 📊 CÁLCULOS AUTOMÁTICOS SEGÚN LA BASE
-        # =======================================================
-        calculos_texto = ""
-        try:
-            df_temp = df_all.copy()
+# 📊 CÁLCULOS AUTOMÁTICOS ROBUSTOS SEGÚN LA BASE
+# =======================================================
+calculos_texto = ""
+try:
+    df_temp = df_all.copy()
 
-            # Asegurar que la desviación sea numérica
-            df_temp["PORC_DESVIACION"] = pd.to_numeric(df_temp.get("PORC_DESVIACION", 0), errors="coerce")
+    # 🧩 1️⃣ Normalizar nombres de columnas (sin espacios, tildes ni signos)
+    import unicodedata
+    def normalizar_col(col):
+        col = (
+            unicodedata.normalize("NFKD", col)
+            .encode("ascii", "ignore")
+            .decode("utf-8")
+            .upper()
+            .replace(" ", "_")
+            .replace(".", "")
+            .replace("%", "")
+        )
+        return col
 
-            # Filtrar procesos desviados (>30%)
-            df_desv = df_temp[df_temp["PORC_DESVIACION"] > 0.3]
+    df_temp.columns = [normalizar_col(c) for c in df_temp.columns]
 
-            # --- Cálculo del juzgado con más procesos desviados ---
-            if not df_desv.empty and all(c in df_temp.columns for c in ["JUZGADO", "CIUDAD F"]):
-                resumen = (
-                    df_desv.groupby(["CIUDAD F", "JUZGADO"])
-                    .agg(
-                        PROCESOS=("OPERACION", "count"),
-                        DESVIACION_PROM=("PORC_DESVIACION", "mean"),
-                        CAPITAL_TOTAL=("CAPITAL_ACT", "sum")
-                    )
-                    .reset_index()
-                    .sort_values(["PROCESOS", "DESVIACION_PROM"], ascending=[False, False])
+    # 🧩 2️⃣ Detectar automáticamente columnas relevantes
+    posibles_juzgado = [c for c in df_temp.columns if "JUZG" in c]
+    posibles_ciudad = [c for c in df_temp.columns if "CIUDAD" in c]
+    posibles_desv = [c for c in df_temp.columns if "DESV" in c or "PORC" in c]
+    posibles_capital = [c for c in df_temp.columns if "CAPITAL" in c or "SUBTOTAL" in c]
+
+    col_juzgado = posibles_juzgado[0] if posibles_juzgado else None
+    col_ciudad = posibles_ciudad[0] if posibles_ciudad else None
+    col_desv = posibles_desv[0] if posibles_desv else None
+    col_capital = posibles_capital[0] if posibles_capital else None
+
+    # 🧩 3️⃣ Validar existencia de columnas críticas
+    if all([col_juzgado, col_ciudad, col_desv]):
+        df_temp[col_desv] = pd.to_numeric(df_temp[col_desv], errors="coerce")
+        df_desv = df_temp[df_temp[col_desv] > 0.3]
+
+        if not df_desv.empty:
+            resumen = (
+                df_desv.groupby([col_ciudad, col_juzgado])
+                .agg(
+                    PROCESOS=("OPERACION", "count") if "OPERACION" in df_temp.columns else ("index", "count"),
+                    DESVIACION_PROM=(col_desv, "mean"),
+                    CAPITAL_TOTAL=(col_capital, "sum") if col_capital else ("index", "count")
                 )
+                .reset_index()
+                .sort_values(["PROCESOS", "DESVIACION_PROM"], ascending=[False, False])
+            )
 
-                # Top 1 y Top 5
-                top = resumen.head(1)
-                top5 = resumen.head(5)
+            # 🔝 Top 1 y Top 5
+            top = resumen.head(1)
+            top5 = resumen.head(5)
 
-                ciudad_top = top.iloc[0]["CIUDAD F"]
-                juzgado_top = top.iloc[0]["JUZGADO"]
-                procesos_top = int(top.iloc[0]["PROCESOS"])
-                desv_top = top.iloc[0]["DESVIACION_PROM"]
-                capital_top = top.iloc[0]["CAPITAL_TOTAL"]
+            ciudad_top = top.iloc[0][col_ciudad]
+            juzgado_top = top.iloc[0][col_juzgado]
+            procesos_top = int(top.iloc[0]["PROCESOS"])
+            desv_top = top.iloc[0]["DESVIACION_PROM"]
+            capital_top = top.iloc[0]["CAPITAL_TOTAL"]
 
-                calculos_texto = f"""
-📊 Cálculos automáticos sobre la base:
+            calculos_texto = f"""
+📊 **Cálculos automáticos sobre la base:**
 • Juzgado con más procesos desviados: **{juzgado_top}**
 • Ciudad: **{ciudad_top}**
 • Procesos desviados: **{procesos_top}**
 • Desviación promedio: **{desv_top:.2%}**
 • Capital total gestionado: **${capital_top:,.0f}**
 
-Top 5 Juzgados con más procesos desviados:
+**Top 5 Juzgados con más procesos desviados:**
 {top5.to_string(index=False)}
 """
-            else:
-                calculos_texto = "⚠️ No se encontraron columnas suficientes para calcular (JUZGADO, CIUDAD F o PORC_DESVIACION)."
+        else:
+            calculos_texto = "✅ No se encontraron procesos con desviación superior al 30%."
 
-        except Exception as calc_err:
-            calculos_texto = f"⚠️ Error durante el cálculo: {calc_err}"
+    else:
+        faltantes = []
+        if not col_juzgado: faltantes.append("JUZGADO")
+        if not col_ciudad: faltantes.append("CIUDAD")
+        if not col_desv: faltantes.append("PORC_DESVIACION")
+        calculos_texto = f"⚠️ No se detectaron columnas clave: {', '.join(faltantes)}."
 
-        # =======================================================
-        # 🧠 PROMPT IA CON CÁLCULOS REALES
-        # =======================================================
-        prompt = f"""
-Pregunta del usuario:
-{pregunta}
-
-Resultados de los cálculos realizados sobre la base:
-{calculos_texto}
-
-Actúa como abogado-analista de datos procesales. 
-Responde con precisión numérica, interpreta los resultados en contexto jurídico y financiero,
-y entrega recomendaciones de control procesal o mejora operativa.
-"""
-
-        # =======================================================
-        # 🗣️ RESPUESTA DE CHRIS IA 🩵
-        # =======================================================
-        with st.chat_message("assistant"):
-            with st.spinner("CHRIS IA 🩵 está analizando los resultados y redactando el informe..."):
-                respuesta = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=st.session_state["chat_chris"]
-                    + [{"role": "user", "content": prompt}],
-                    max_tokens=900,
-                )
-                texto_resp = respuesta.choices[0].message.content.strip()
-                st.markdown(texto_resp)
-
-        st.session_state["chat_chris"].append({"role": "assistant", "content": texto_resp})
-
-except Exception as e:
-    st.warning(f"⚠️ Error en CHRIS IA 🩵: {e}")
-    st.info("Verifica que tu archivo `.streamlit/secrets.toml` contenga la clave OPENAI_API_KEY correctamente configurada.")
+except Exception as calc_err:
+    calculos_texto = f"⚠️ Error durante el cálculo: {calc_err}"
