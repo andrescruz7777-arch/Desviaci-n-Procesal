@@ -117,7 +117,7 @@ if total_errores > 0:
     errores.to_excel(out_err, index=False, engine="openpyxl")
     out_err.seek(0)
     st.download_button(
-        "⬇️ Descargar registros con errores (Paso 4)",
+        "⬇️ Descargar registros con errores",
         data=out_err,
         file_name="Errores_Fechas_Paso4.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -262,7 +262,7 @@ out5 = BytesIO()
 df5.to_excel(out5, index=False, engine="openpyxl")
 out5.seek(0)
 st.download_button(
-    "⬇️ Descargar Inventario Clasificado (Paso 5 - Global)",
+    "⬇️ Descargar Inventario Clasificado",
     data=out5, file_name="Inventario_Paso5_Clasificado_Global.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
