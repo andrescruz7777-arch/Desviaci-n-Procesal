@@ -623,67 +623,76 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
   # ============================================
-# 🤖 ANÁLISIS AUTOMÁTICO CON IA — EXPLICATIVO (SDK NUEVO)
+# 🤖 ANÁLISIS AUTOMÁTICO CON IA — CHRIS IA 🩵 (Versión Jurídica Bancaria)
 # ============================================
 
-st.markdown("### 🤖 Análisis Automático con IA — Contacto Solutions")
+st.markdown("### 🤖 Análisis Automático con IA — Informe Jurídico Comercial (CHRIS IA 🩵)")
 
 try:
     from openai import OpenAI
     from datetime import datetime
 
-    # Inicializar cliente
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    fecha_actual = datetime.now().strftime("%d/%m/%Y")
 
-    # Botón para ejecutar el análisis IA
-    if st.button("🧠 Generar Análisis de Desviación con IA"):
-        with st.spinner("Analizando información con IA..."):
-            # Resumen rápido del dataset global
+    if st.button("🧠 Generar Informe Jurídico con IA"):
+        with st.spinner("CHRIS IA está analizando los resultados..."):
+            # Resumen rápido del dataset
             total = len(df_all)
             promedio = df_all.get("PORC_DESVIACION", pd.Series([0])).mean()
             fuera = df_all[df_all.get("PORC_DESVIACION", 0) > 0.3].shape[0]
             etapas_top = ", ".join(df_all["ETAPA_JURIDICA"].value_counts().head(3).index)
 
             resumen = (
-                f"Total procesos: {total}. "
+                f"Total de procesos: {total}. "
                 f"Promedio de desviación: {promedio:.2%}. "
                 f"Procesos fuera de tiempo (>30%): {fuera}. "
                 f"Etapas más frecuentes: {etapas_top}."
             )
 
             prompt = f"""
-Eres un analista judicial del área de control procesal de Contacto Solutions.
-Con base en estos datos:
+Eres un abogado especializado en procesos comerciales y demandas a clientes en mora del sector bancario colombiano.
+
+Con base en la siguiente información estadística sobre los procesos judiciales en curso:
 
 {resumen}
 
-Elabora un informe gerencial que incluya:
-1. Interpretación general de los resultados.
-2. Etapas con mayor desviación y posibles causas.
-3. Recomendaciones operativas para reducir desviaciones.
-4. Tono profesional y redactado para presentación a dirección jurídica.
+Redacta un **Informe Gerencial Jurídico** para Contacto Solutions que incluya:
+
+1. Interpretación general de los resultados con lenguaje técnico-jurídico.
+2. Identificación de las etapas con mayor desviación y explicación de las posibles causas desde una perspectiva legal y operativa.
+3. Recomendaciones concretas para optimizar la gestión procesal, prevenir incumplimientos y mejorar la eficiencia.
+4. Un tono formal, objetivo y propio de un abogado litigante del área de cobranza judicial bancaria.
+5. Al final, agrega un bloque de firma con esta estructura:
+
+---
+**Informe Jurídico elaborado por:** CHRIS IA 🩵  
+**Área:** Control Procesal Bancario – Contacto Solutions  
+**Fecha:** {fecha_actual}
+---
 """
 
-            # Nueva forma de llamada al modelo
             respuesta = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Eres un experto en análisis judicial y control de tiempos procesales."},
+                    {
+                        "role": "system",
+                        "content": "Eres un abogado colombiano experto en derecho comercial y procesos ejecutivos bancarios.",
+                    },
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=600,
+                max_tokens=700,
             )
 
             texto_ia = respuesta.choices[0].message.content.strip()
 
-            st.success("✅ Análisis IA completado correctamente")
-            st.markdown("#### 📋 Resultado del análisis IA:")
+            st.success("✅ Informe jurídico generado correctamente por CHRIS IA 🩵")
+            st.markdown("#### 📋 Resultado del Análisis Jurídico:")
             st.markdown(texto_ia)
 
-            # Guardar el análisis con fecha en la sesión
-            st.session_state["analisis_ia_banco"] = {
+            st.session_state["analisis_ia_chris"] = {
                 "texto": texto_ia,
-                "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "fecha": fecha_actual
             }
 
 except Exception as e:
