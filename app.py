@@ -623,16 +623,17 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
   # ============================================
-# 🤖 ANÁLISIS AUTOMÁTICO CON IA — EXPLICATIVO
+# 🤖 ANÁLISIS AUTOMÁTICO CON IA — EXPLICATIVO (SDK NUEVO)
 # ============================================
 
 st.markdown("### 🤖 Análisis Automático con IA — Contacto Solutions")
 
 try:
-    import openai
+    from openai import OpenAI
     from datetime import datetime
 
-    openai.api_key = st.secrets["OPENAI_API_KEY"]
+    # Inicializar cliente
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
     # Botón para ejecutar el análisis IA
     if st.button("🧠 Generar Análisis de Desviación con IA"):
@@ -663,8 +664,8 @@ Elabora un informe gerencial que incluya:
 4. Tono profesional y redactado para presentación a dirección jurídica.
 """
 
-            # Llamada al modelo IA
-            respuesta = openai.ChatCompletion.create(
+            # Nueva forma de llamada al modelo
+            respuesta = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto en análisis judicial y control de tiempos procesales."},
@@ -688,4 +689,3 @@ Elabora un informe gerencial que incluya:
 except Exception as e:
     st.warning(f"⚠️ No se pudo ejecutar el análisis IA: {e}")
     st.info("Verifica que tu archivo `.streamlit/secrets.toml` contenga la clave `OPENAI_API_KEY`.")
-
