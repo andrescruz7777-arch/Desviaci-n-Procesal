@@ -698,3 +698,78 @@ Redacta un **Informe Gerencial Jurídico** para Contacto Solutions que incluya:
 except Exception as e:
     st.warning(f"⚠️ No se pudo ejecutar el análisis IA: {e}")
     st.info("Verifica que tu archivo `.streamlit/secrets.toml` contenga la clave `OPENAI_API_KEY`.")
+  # ============================================
+# 🧠 IA CORRECTIVA — Diagnóstico de Desviaciones (CHRIS IA 🩵)
+# ============================================
+
+st.markdown("### 🧩 Diagnóstico IA — Análisis Correctivo de Desviaciones (CHRIS IA 🩵)")
+
+try:
+    from openai import OpenAI
+    from datetime import datetime
+
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    fecha_actual = datetime.now().strftime("%d/%m/%Y")
+
+    if st.button("🔍 Analizar Causas y Errores con CHRIS IA"):
+        with st.spinner("CHRIS IA está revisando las desviaciones..."):
+            # Seleccionamos los 10 casos con mayor desviación
+            if "PORC_DESVIACION" in df_all.columns:
+                top_df = df_all.nlargest(10, "PORC_DESVIACION")[[
+                    "OPERACION", "ETAPA_JURIDICA", "SUB_ETAPA_JURIDICA", "PORC_DESVIACION"
+                ]]
+                muestra = top_df.to_markdown(index=False)
+            else:
+                muestra = "No se encontró la columna PORC_DESVIACION en el dataset."
+
+            prompt = f"""
+Eres un abogado especialista en control procesal del sector bancario. 
+Tu tarea es revisar la siguiente muestra de procesos judiciales con mayor desviación:
+
+{muestra}
+
+Analiza las posibles causas jurídicas y operativas que podrían estar generando las desviaciones 
+(en errores de fechas, tipificación, carga judicial o demoras del banco).
+Redacta una tabla explicativa con las siguientes columnas:
+
+1. ETAPA_JURIDICA  
+2. POSIBLE CAUSA DE DESVIACIÓN  
+3. RECOMENDACIÓN CORRECTIVA  
+
+Sé concreto, utiliza terminología jurídica colombiana y redacta con tono técnico-profesional.
+Al final, agrega un párrafo resumen con la visión global del problema y su impacto operativo.
+Firma como:
+
+---
+**Análisis Correctivo elaborado por:** CHRIS IA 🩵  
+**Fecha:** {fecha_actual}
+---
+"""
+
+            respuesta = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Eres un abogado litigante experto en procesos ejecutivos del sector bancario colombiano.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=900,
+            )
+
+            texto_ia_corr = respuesta.choices[0].message.content.strip()
+
+            st.success("✅ Diagnóstico correctivo generado correctamente por CHRIS IA 🩵")
+            st.markdown("#### 📋 Resultado del Análisis Correctivo:")
+            st.markdown(texto_ia_corr)
+
+            st.session_state["analisis_ia_correctivo"] = {
+                "texto": texto_ia_corr,
+                "fecha": fecha_actual
+            }
+
+except Exception as e:
+    st.warning(f"⚠️ No se pudo ejecutar el análisis IA: {e}")
+    st.info("Verifica tu archivo `.streamlit/secrets.toml` con la clave `OPENAI_API_KEY`.")
+
