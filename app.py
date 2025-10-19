@@ -508,7 +508,7 @@ if not faltan_8:
 # ============================================
 # 🏦 BLOQUE FINAL — Procesos bajo control del Banco (No incluidos en SLA COS)
 # ============================================
-st.header("🏦 Procesos bajo control del Banco (No incluidos en SLA COS)")
+st.header("🏦 Procesos bajo control del Banco (No incluidos en SLA de la desviacion procesal gnb 🌳)")
 
 SUB_BANCO = {"EN TRAMITE", "RECEPCION GARANTIAS", "PODER PARA FIRMA", "RECEPCION PODER", "RETIRO"}
 df_banco = df_all[
