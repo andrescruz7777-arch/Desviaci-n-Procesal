@@ -773,33 +773,65 @@ except Exception as e:
     st.warning(f"⚠️ No se pudo ejecutar el análisis IA: {e}")
     st.info("Verifica tu archivo `.streamlit/secrets.toml` con la clave `OPENAI_API_KEY`.")
   # ============================================
-# 💬 CHRIS IA 🩵 — Chat Inteligente con Cálculo Automático
+# 💬 CHRIS IA 🩵 — Analista Jurídico + Data Analyst Procesal y Financiero
 # ============================================
 
-st.markdown("### 💬 CHRIS IA 🩵 — Análisis Conversacional con Cálculos Reales de Desviación")
+st.markdown("### 💬 CHRIS IA 🩵 — Análisis Conversacional con Cálculos Reales y Contexto Completo")
 
 try:
     from openai import OpenAI
     import pandas as pd
 
+    # Inicializar cliente de OpenAI
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
+    # =======================================================
+    # 🎯 CONTEXTO Y PERSONALIDAD DEL MODELO (ROL DUAL)
+    # =======================================================
     if "chat_chris" not in st.session_state:
         st.session_state["chat_chris"] = [
-            {"role": "system", "content": """
-Eres CHRIS IA 🩵, abogado analista del sector bancario colombiano.
-Tienes acceso a resultados de cálculos procesales y financieros de Contacto Solutions.
-Responde con tono técnico, jurídico y financiero.
-Si se te proporcionan cálculos de desviaciones, explícalos en lenguaje gerencial y con recomendaciones.
-"""}
+            {
+                "role": "system",
+                "content": """
+Eres CHRIS IA 🩵, analista senior de bases de datos procesales y abogado experto en cobranza judicial bancaria.
+
+Tu función principal es analizar datos reales del DataFrame `df_all` de Contacto Solutions, que contiene:
+- JUZGADO, CIUDAD, DEPARTAMENTO
+- ETAPA_JURIDICA, SUB_ETAPA_JURIDICA, PORC_DESVIACION
+- CAPITAL, SUBTOTAL, CAPITAL_ACT, CAPITAL_TOTAL
+- CICLOS_MORA, DIAS_RESTANTES_VENCIMIENTO
+- NOMBRE_CLIENTE, CEDULA_CLIENTE, OPERACION
+
+Debes comportarte como un **data analyst jurídico**, con estas reglas:
+
+1️⃣ **Prioriza los datos exactos.**  
+   Si existen cálculos (conteos, promedios, sumas, porcentajes), repórtalos directamente con cifras.  
+   Si no hay datos suficientes, especifica qué columnas faltan.
+
+2️⃣ **Calcula y analiza.**  
+   Usa los resultados entregados por Python (promedios, sumas o conteos) para generar conclusiones numéricas.
+
+3️⃣ **Habla con lenguaje técnico-financiero y jurídico.**  
+   Redacta conclusiones claras, precisas y con base en números concretos.
+
+4️⃣ **Estructura las respuestas en este formato:**
+   - Resumen numérico o hallazgo exacto  
+   - Interpretación jurídica y operativa  
+   - Recomendación o conclusión  
+
+Si se te proporcionan resultados de cálculos, utiliza los porcentajes y montos como fundamento de tus análisis.
+"""
+            }
         ]
 
-    # Mostrar historial
+    # =======================================================
+    # 💬 HISTORIAL Y CAMPO DE CHAT
+    # =======================================================
     for msg in st.session_state["chat_chris"][1:]:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    pregunta = st.chat_input("Escribe tu pregunta o análisis...")
+    pregunta = st.chat_input("Escribe tu pregunta jurídica o financiera sobre la base...")
 
     if pregunta:
         st.session_state["chat_chris"].append({"role": "user", "content": pregunta})
@@ -807,7 +839,7 @@ Si se te proporcionan cálculos de desviaciones, explícalos en lenguaje gerenci
             st.markdown(pregunta)
 
         # =======================================================
-        # 📊 CÁLCULO REAL — JUZGADO CON MÁS PROCESOS DESVIADOS
+        # 📊 CÁLCULOS AUTOMÁTICOS SEGÚN LA BASE
         # =======================================================
         calculos_texto = ""
         try:
@@ -816,19 +848,26 @@ Si se te proporcionan cálculos de desviaciones, explícalos en lenguaje gerenci
             # Asegurar que la desviación sea numérica
             df_temp["PORC_DESVIACION"] = pd.to_numeric(df_temp.get("PORC_DESVIACION", 0), errors="coerce")
 
-            # Filtrar los procesos desviados (> 0.3 o 30%)
+            # Filtrar procesos desviados (>30%)
             df_desv = df_temp[df_temp["PORC_DESVIACION"] > 0.3]
 
+            # --- Cálculo del juzgado con más procesos desviados ---
             if not df_desv.empty and all(c in df_temp.columns for c in ["JUZGADO", "CIUDAD F"]):
                 resumen = (
                     df_desv.groupby(["CIUDAD F", "JUZGADO"])
-                    .agg(PROCESOS=("OPERACION", "count"),
-                         DESVIACION_PROM=("PORC_DESVIACION", "mean"),
-                         CAPITAL_TOTAL=("CAPITAL_ACT", "sum"))
+                    .agg(
+                        PROCESOS=("OPERACION", "count"),
+                        DESVIACION_PROM=("PORC_DESVIACION", "mean"),
+                        CAPITAL_TOTAL=("CAPITAL_ACT", "sum")
+                    )
                     .reset_index()
                     .sort_values(["PROCESOS", "DESVIACION_PROM"], ascending=[False, False])
                 )
+
+                # Top 1 y Top 5
                 top = resumen.head(1)
+                top5 = resumen.head(5)
+
                 ciudad_top = top.iloc[0]["CIUDAD F"]
                 juzgado_top = top.iloc[0]["JUZGADO"]
                 procesos_top = int(top.iloc[0]["PROCESOS"])
@@ -836,15 +875,21 @@ Si se te proporcionan cálculos de desviaciones, explícalos en lenguaje gerenci
                 capital_top = top.iloc[0]["CAPITAL_TOTAL"]
 
                 calculos_texto = f"""
-El juzgado con más procesos desviados es **{juzgado_top}**, ubicado en **{ciudad_top}**, 
-con **{procesos_top} procesos** que superan el 30% de desviación, 
-y una desviación promedio de **{desv_top:.2%}**.
-El capital total gestionado en este juzgado asciende a **${capital_top:,.0f}**.
+📊 Cálculos automáticos sobre la base:
+• Juzgado con más procesos desviados: **{juzgado_top}**
+• Ciudad: **{ciudad_top}**
+• Procesos desviados: **{procesos_top}**
+• Desviación promedio: **{desv_top:.2%}**
+• Capital total gestionado: **${capital_top:,.0f}**
+
+Top 5 Juzgados con más procesos desviados:
+{top5.to_string(index=False)}
 """
             else:
-                calculos_texto = "No se encontró información suficiente en las columnas JUZGADO, CIUDAD F o PORC_DESVIACION."
+                calculos_texto = "⚠️ No se encontraron columnas suficientes para calcular (JUZGADO, CIUDAD F o PORC_DESVIACION)."
+
         except Exception as calc_err:
-            calculos_texto = f"Error en cálculo: {calc_err}"
+            calculos_texto = f"⚠️ Error durante el cálculo: {calc_err}"
 
         # =======================================================
         # 🧠 PROMPT IA CON CÁLCULOS REALES
@@ -853,20 +898,24 @@ El capital total gestionado en este juzgado asciende a **${capital_top:,.0f}**.
 Pregunta del usuario:
 {pregunta}
 
-Resultados de los cálculos realizados sobre la base de datos:
+Resultados de los cálculos realizados sobre la base:
 {calculos_texto}
 
-Responde como abogado experto en control procesal y cobranza judicial bancaria.
-Explica qué significan los resultados, analiza causas probables, 
-riesgos jurídicos y financieros, e incluye recomendaciones concretas.
+Actúa como abogado-analista de datos procesales. 
+Responde con precisión numérica, interpreta los resultados en contexto jurídico y financiero,
+y entrega recomendaciones de control procesal o mejora operativa.
 """
 
+        # =======================================================
+        # 🗣️ RESPUESTA DE CHRIS IA 🩵
+        # =======================================================
         with st.chat_message("assistant"):
-            with st.spinner("CHRIS IA 🩵 está interpretando los resultados..."):
+            with st.spinner("CHRIS IA 🩵 está analizando los resultados y redactando el informe..."):
                 respuesta = client.chat.completions.create(
                     model="gpt-4o-mini",
-                    messages=st.session_state["chat_chris"] + [{"role": "user", "content": prompt}],
-                    max_tokens=800,
+                    messages=st.session_state["chat_chris"]
+                    + [{"role": "user", "content": prompt}],
+                    max_tokens=900,
                 )
                 texto_resp = respuesta.choices[0].message.content.strip()
                 st.markdown(texto_resp)
@@ -875,4 +924,4 @@ riesgos jurídicos y financieros, e incluye recomendaciones concretas.
 
 except Exception as e:
     st.warning(f"⚠️ Error en CHRIS IA 🩵: {e}")
-    st.info("Verifica que tu archivo `.streamlit/secrets.toml` contenga la clave OPENAI_API_KEY correctamente.")
+    st.info("Verifica que tu archivo `.streamlit/secrets.toml` contenga la clave OPENAI_API_KEY correctamente configurada.")
