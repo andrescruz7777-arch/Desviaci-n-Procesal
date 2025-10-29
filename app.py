@@ -96,29 +96,41 @@ inv[col_dias] = inv[col_dias].fillna(inv[col_duracion])
 # ============================================
 # 📆 PASO 4 — CALCULAR VAR_FECHA_CALCULADA Y DEPURAR (normalizando día)
 # ============================================
-# ✅ Corrección preventiva: evitar fechas "futuras" por sobreescrituras o zonas horarias
-inv["FECHA_ACT_ETAPA"] = pd.to_datetime(inv["FECHA_ACT_ETAPA"], errors="coerce")
-inv["FECHA_ACT_INVENTARIO"] = pd.to_datetime(inv["FECHA_ACT_INVENTARIO"], errors="coerce")
-# Si la FECHA_ACT_ETAPA es mayor al inventario, reasignar a la fecha del inventario (corrige 74 casos)
-inv.loc[inv["FECHA_ACT_ETAPA"] > inv["FECHA_ACT_INVENTARIO"], "FECHA_ACT_ETAPA"] = inv["FECHA_ACT_INVENTARIO"]
 
+# 1. Validar que existan las columnas mínimas
 for c in ["FECHA_ACT_INVENTARIO", "FECHA_ACT_ETAPA"]:
     if c not in inv.columns:
         st.error(f"❌ Falta la columna {c} en el inventario.")
         st.stop()
 
+# 2. Parsear a datetime
 inv["FECHA_ACT_INVENTARIO"] = pd.to_datetime(inv["FECHA_ACT_INVENTARIO"], errors="coerce")
 inv["FECHA_ACT_ETAPA"] = pd.to_datetime(inv["FECHA_ACT_ETAPA"], errors="coerce")
 
+# 3. Bandera: detectar las filas donde la etapa parece irse al futuro
+inv["FECHA_FUTURA_FLAG"] = inv["FECHA_ACT_ETAPA"] > inv["FECHA_ACT_INVENTARIO"]
+
+# 4. Corrección: si la etapa está en el futuro, la igualamos a la fecha de inventario
+inv.loc[inv["FECHA_FUTURA_FLAG"], "FECHA_ACT_ETAPA"] = inv.loc[inv["FECHA_FUTURA_FLAG"], "FECHA_ACT_INVENTARIO"]
+
+# 5. Recalcular diferencia en días ya con fechas corregidas
 inv["VAR_FECHA_CALCULADA"] = (
     inv["FECHA_ACT_INVENTARIO"].dt.normalize() - inv["FECHA_ACT_ETAPA"].dt.normalize()
 ).dt.days
 
-errores = inv[inv["VAR_FECHA_CALCULADA"].isna() | (inv["VAR_FECHA_CALCULADA"] < 0)].copy()
+# 6. Construir dataframe de errores de verdad (nulos o negativos)
+errores = inv[
+    inv["VAR_FECHA_CALCULADA"].isna()
+    | (inv["VAR_FECHA_CALCULADA"] < 0)
+].copy()
+
 total_errores = len(errores)
 
+# 7. Mostrar resumen en pantalla
 if total_errores > 0:
     st.warning(f"⚠️ {total_errores:,} registros con errores de fecha (nulos o negativos).")
+
+    # Exportamos también la bandera para auditar
     out_err = BytesIO()
     errores.to_excel(out_err, index=False, engine="openpyxl")
     out_err.seek(0)
@@ -131,6 +143,7 @@ if total_errores > 0:
 else:
     st.success("✅ No se encontraron errores de fecha.")
 
+# 8. Base limpia = solo válidos
 base_limpia = inv.dropna(subset=["VAR_FECHA_CALCULADA"])
 base_limpia = base_limpia[base_limpia["VAR_FECHA_CALCULADA"] >= 0].copy()
 
