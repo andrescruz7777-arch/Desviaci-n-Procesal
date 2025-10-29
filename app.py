@@ -141,12 +141,12 @@ total_errores = len(errores)
 
 # 8️⃣ Reporte visual y descarga
 if total_errores > 0:
-    st.warning(f"⚠️ {total_errores:,} registros con errores de fecha reales.")
+    st.warning(f"⚠️ {total_errores:,} registros con errores de fecha.")
     out_err = BytesIO()
     errores.to_excel(out_err, index=False, engine="openpyxl")
     out_err.seek(0)
     st.download_button(
-        "⬇️ Descargar registros con errores (solo reales)",
+        "⬇️ Descargar registros con errores",
         data=out_err,
         file_name="Errores_Fechas_Paso4.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
