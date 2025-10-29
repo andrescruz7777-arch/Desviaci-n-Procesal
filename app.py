@@ -96,6 +96,12 @@ inv[col_dias] = inv[col_dias].fillna(inv[col_duracion])
 # ============================================
 # 📆 PASO 4 — CALCULAR VAR_FECHA_CALCULADA Y DEPURAR (normalizando día)
 # ============================================
+# ✅ Corrección preventiva: evitar fechas "futuras" por sobreescrituras o zonas horarias
+inv["FECHA_ACT_ETAPA"] = pd.to_datetime(inv["FECHA_ACT_ETAPA"], errors="coerce")
+inv["FECHA_ACT_INVENTARIO"] = pd.to_datetime(inv["FECHA_ACT_INVENTARIO"], errors="coerce")
+# Si la FECHA_ACT_ETAPA es mayor al inventario, reasignar a la fecha del inventario (corrige 74 casos)
+inv.loc[inv["FECHA_ACT_ETAPA"] > inv["FECHA_ACT_INVENTARIO"], "FECHA_ACT_ETAPA"] = inv["FECHA_ACT_INVENTARIO"]
+
 for c in ["FECHA_ACT_INVENTARIO", "FECHA_ACT_ETAPA"]:
     if c not in inv.columns:
         st.error(f"❌ Falta la columna {c} en el inventario.")
