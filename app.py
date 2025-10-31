@@ -539,12 +539,12 @@ if not faltan_8:
 # 🏦 BLOQUE FINAL — Procesos bajo control del Banco (No incluidos en SLA COS)
 # ============================================
 st.header("🏦 Procesos bajo control del Banco (No incluidos en SLA de la desviacion procesal gnb 🌳)")
+# ============================================
+# 🏦 BLOQUE BANCO — Procesos SIN SLA
+# ============================================
+df_banco = df_all[df_all["ESTADO_TIEMPO"].astype(str).str.upper() == "SIN SLA"].copy()
 
-SUB_BANCO = {"EN TRAMITE", "RECEPCION GARANTIAS", "PODER PARA FIRMA", "RECEPCION PODER", "RETIRO"}
-df_banco = df_all[
-    (df_all["ETAPA_JURIDICA"].astype(str).str.upper() == "PASE A LEGAL") &
-    (df_all["SUB_ETAPA_JURIDICA"].astype(str).str.upper().isin(SUB_BANCO))
-].copy()
+st.write(f"📊 Procesos clasificados SIN SLA (bajo control del Banco): {len(df_banco):,}")
 
 if df_banco.empty:
     st.info("✅ No hay procesos bajo control del banco para mostrar.")
